@@ -10,6 +10,7 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 - **Phase 2 (Types & API Utility Layer):** Complete — TypeScript interfaces, helper functions, API client
 - **Phase 3 (API Proxy Route):** Complete — full upstream proxy with caching, timeout, error handling
 - **Phase 5 (Map Components):** Complete — AircraftMarker, Map, MapWrapper with dynamic import (no SSR)
+- **Phase 6 (Polling + Integration):** Complete — useAircraftData hook, StatusBar, page wiring, live data on map
 
 ### What's Implemented
 
@@ -20,11 +21,12 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 | `src/lib/api.ts` | Done | `fetchMilitaryAircraft` — fetches from local proxy with validation |
 | `src/app/api/aircraft/route.ts` | Done | Proxies to ADSB.lol `/v2/mil` with 15s timeout, cache headers, structured 502 errors |
 | `src/app/layout.tsx` | Done | Root layout with metadata and globals.css import |
-| `src/app/page.tsx` | Done | Client component rendering full-viewport map via MapWrapper |
+| `src/app/page.tsx` | Done | Client component with useAircraftData hook, StatusBar, and MapWrapper |
 | `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with DivIcon inline SVG, altitude-based coloring, track rotation, popup with details |
 | `src/components/Map.tsx` | Done | Client component with `MapContainer`, `TileLayer`, renders `AircraftMarker` for each positioned aircraft |
 | `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
-| `src/hooks/` | Empty | useAircraftData polling hook not yet created |
+| `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, last updated time, connection status with colored indicator |
+| `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, manages aircraft state, error handling, preserves data on failure |
 
 ## Commands
 
@@ -119,12 +121,22 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 - **MapWrapper.tsx** — uses `next/dynamic` to import `Map` with `{ ssr: false }`, shows "Loading map..." placeholder
   - This is what `page.tsx` renders — never import `Map.tsx` directly from a server component
 
-### Polling
+### Polling Hook (src/hooks/useAircraftData.ts)
 
-- Use a `useEffect` + `setInterval` pattern in a custom hook (`useAircraftData`)
-- Poll interval: 10 seconds (configurable via env)
-- On each poll, replace the full aircraft state (not merge) since the API returns a complete snapshot
-- Track `lastUpdated` timestamp for the status bar
+- `useAircraftData()` — custom hook that polls `/api/aircraft` every 10 seconds
+- Returns `{ aircraft, loading, error, lastUpdated, totalCount }`
+- `aircraft` is pre-filtered to only include aircraft with valid positions (via `hasPosition`)
+- On mount: fetches immediately, then sets up `setInterval` with `POLL_INTERVAL_MS` (default 10000, reads `NEXT_PUBLIC_POLL_INTERVAL_MS`)
+- On success: replaces full aircraft state, updates `totalCount` from `response.total`, sets `lastUpdated`, clears error
+- On failure: sets error message string, preserves previous aircraft data on map, continues polling
+- Cleanup: clears interval on unmount
+
+### StatusBar (src/components/StatusBar.tsx)
+
+- Fixed to top of viewport, dark background (`zinc-900`), white text, small font
+- Left side: total count (from API response) and tracked count (aircraft with positions)
+- Right side: last updated time (HH:MM:SS), connection status (green/red dot + message)
+- Props: `totalCount`, `positionCount`, `lastUpdated`, `error`
 
 ## Allowed Dependencies
 

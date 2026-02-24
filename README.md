@@ -94,11 +94,11 @@ overwatch/
 │   │   ├── Map.tsx              # Leaflet map (client component, no SSR)
 │   │   ├── MapWrapper.tsx       # Dynamic import wrapper for Map (ssr: false)
 │   │   ├── AircraftMarker.tsx   # Individual plane marker (React.memo'd)
+│   │   ├── StatusBar.tsx        # Connection status + aircraft count
 │   │   ├── AircraftPanel.tsx    # Detail sidebar/panel (planned)
-│   │   ├── FilterBar.tsx        # Type/altitude/callsign filters (planned)
-│   │   └── StatusBar.tsx        # Connection status + aircraft count (planned)
+│   │   └── FilterBar.tsx        # Type/altitude/callsign filters (planned)
 │   ├── hooks/
-│   │   └── useAircraftData.ts   # Polling hook
+│   │   └── useAircraftData.ts   # Polling hook (10s interval, error-resilient)
 │   ├── lib/
 │   │   ├── api.ts               # Fetch wrapper for our proxy
 │   │   ├── types.ts             # TypeScript interfaces
@@ -120,7 +120,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. No API keys needed.
+Open `http://localhost:3000`. No API keys needed. You should see a status bar at the top and a map with military aircraft updating every 10 seconds.
 
 ## Environment Variables
 

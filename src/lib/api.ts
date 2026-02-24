@@ -10,9 +10,21 @@ export const fetchMilitaryAircraft = async (): Promise<AircraftResponse> => {
   const response = await fetch("/api/aircraft");
 
   if (!response.ok) {
-    throw new Error(
-      `Aircraft API request failed: ${response.status} ${response.statusText}`
-    );
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body: unknown = await response.json();
+      if (
+        typeof body === "object" &&
+        body !== null &&
+        "details" in body &&
+        typeof (body as { details: unknown }).details === "string"
+      ) {
+        detail = (body as { details: string }).details;
+      }
+    } catch {
+      // response body wasn't JSON — use the status line
+    }
+    throw new Error(`Aircraft API request failed: ${detail}`);
   }
 
   const data: unknown = await response.json();

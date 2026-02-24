@@ -116,16 +116,21 @@ overwatch/
 ├── .eslintrc.json               # ESLint with next/core-web-vitals
 ├── .gitignore                   # Standard Next.js gitignore
 ├── public/
-│   └── icons/                   # Static assets (aircraft.svg planned)
+│   └── icons/                   # Static assets
 └── src/
     ├── app/
     │   ├── layout.tsx           # Root HTML layout + metadata
-    │   ├── page.tsx             # Home page (placeholder)
+    │   ├── page.tsx             # Main page — StatusBar + MapWrapper with live data
     │   └── api/
     │       └── aircraft/
     │           └── route.ts     # API proxy route (proxies to ADSB.lol)
-    ├── components/              # React components (empty, Phase 5+)
-    ├── hooks/                   # Custom hooks (empty, Phase 6)
+    ├── components/
+    │   ├── AircraftMarker.tsx   # React.memo'd Leaflet marker with plane SVG
+    │   ├── Map.tsx              # Leaflet MapContainer with TileLayer + markers
+    │   ├── MapWrapper.tsx       # Dynamic import wrapper (ssr: false)
+    │   └── StatusBar.tsx        # Top bar: counts, last updated, connection status
+    ├── hooks/
+    │   └── useAircraftData.ts   # Polling hook — fetches aircraft every 10s
     ├── lib/
     │   ├── types.ts             # AircraftState, AircraftResponse, type guards
     │   ├── api.ts               # fetchMilitaryAircraft client function
@@ -373,24 +378,36 @@ Tested with `npm run dev` and `curl http://localhost:3000/api/aircraft`:
 | Module | Exports | Used by |
 |---|---|---|
 | `src/lib/types.ts` | `AircraftState`, `AircraftResponse`, `hasPosition`, `isMilitary` | utils.ts, api.ts, all components, hooks |
-| `src/lib/utils.ts` | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` | AircraftMarker, AircraftPanel, StatusBar |
+| `src/lib/utils.ts` | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` | AircraftMarker |
 | `src/lib/api.ts` | `fetchMilitaryAircraft` | useAircraftData hook |
+| `src/hooks/useAircraftData.ts` | `useAircraftData` | page.tsx |
+| `src/components/StatusBar.tsx` | `StatusBar` | page.tsx |
+| `src/components/MapWrapper.tsx` | `MapWrapper` | page.tsx |
+| `src/components/Map.tsx` | `default` (Map) | MapWrapper (via dynamic import) |
+| `src/components/AircraftMarker.tsx` | `AircraftMarker` | Map.tsx |
 | `src/app/api/aircraft/route.ts` | `GET` (route handler) | Next.js server (handles `/api/aircraft` requests) |
 
 ### Dependency graph
 
 ```
 types.ts  ←── utils.ts
-    ↑          ↑
-    │          │
-    ├── api.ts │
-    │          │
-    └── [future components and hooks will import from all three]
+    ↑              ↑
+    │              │
+    ├── api.ts     │
+    │    ↑         │
+    │    │         │
+    │  useAircraftData.ts
+    │    ↑
+    │    │
+    ├── page.tsx ──→ StatusBar.tsx
+    │    │
+    │    └──→ MapWrapper.tsx ──→ Map.tsx ──→ AircraftMarker.tsx
+    │                                            ↑
+    │                                            │
+    └────────────────────────────────────────────┘
 
 api/aircraft/route.ts  (standalone — imports only NextResponse from next/server)
 ```
-
-`types.ts` is the leaf dependency — it imports nothing from the project. `utils.ts` imports only `AircraftState` from `types.ts`. `api.ts` imports only `AircraftResponse` from `types.ts`. The route handler (`api/aircraft/route.ts`) is standalone — it imports only `NextResponse` from `next/server` and has no project-internal dependencies.
 
 ---
 
@@ -453,9 +470,15 @@ npm run lint
 npm run build
 ```
 
-### Current state (after Phase 3)
+### Current state (after Phase 6)
 
-When you open `http://localhost:3000`, you will see a centered "Overwatch" heading. This is the placeholder page — the map, aircraft markers, and live data will be added in Phases 4-6.
+When you open `http://localhost:3000`, you will see:
+
+1. A dark status bar at the top showing total aircraft count, tracked (positioned) count, last updated time, and a green connection indicator
+2. A full-screen Leaflet map with plane icons for military aircraft
+3. Plane icons colored by altitude: green (ground), blue (<10,000 ft), red (>=10,000 ft), rotated to match heading
+4. Data refreshes automatically every 10 seconds
+5. Clicking a plane shows a popup with callsign, type, registration, altitude, and speed
 
 The API proxy route at `http://localhost:3000/api/aircraft` returns live military aircraft data proxied from ADSB.lol. Expect a JSON response with 200-800 aircraft in the `ac` array.
 
@@ -542,14 +565,125 @@ No rate limits are currently enforced by ADSB.lol. Overwatch polls at a **10-sec
 
 ---
 
+## Phase 5: Map Components
+
+Phase 5 implemented the Leaflet map layer with aircraft markers rendered from live data.
+
+### Files implemented:
+
+### `src/components/AircraftMarker.tsx` — Individual Aircraft Marker
+
+A `React.memo`'d client component that renders a single aircraft as a Leaflet marker.
+
+- Returns `null` if the aircraft has no position (via `hasPosition` guard)
+- Uses `L.DivIcon` with inline SVG for the plane icon
+- SVG rotated by `aircraft.track` degrees via CSS `transform: rotate()`
+- Icon size 24x24, anchor 12x12 (centered)
+- **Altitude-based coloring:**
+  - Green (`#22c55e`): on ground
+  - Blue (`#3b82f6`): below 10,000 ft
+  - Red (`#ef4444`): 10,000 ft and above
+- Popup displays: formatted callsign, type code, registration, altitude, speed
+- Accepts `onClick` callback for future detail panel integration
+
+### `src/components/Map.tsx` — Leaflet Map Container
+
+Client component that renders the interactive map.
+
+- Imports Leaflet CSS directly
+- Uses `MapContainer` + `TileLayer` from react-leaflet with OpenStreetMap tiles
+- Center/zoom configurable via env vars (defaults: 38.9°N, 77.0°W, zoom 5)
+- Renders `AircraftMarker` for each aircraft that passes `hasPosition` filter
+- Aircraft keyed by `hex` (ICAO address) for efficient React reconciliation
+
+### `src/components/MapWrapper.tsx` — Dynamic Import Wrapper
+
+Uses `next/dynamic` to import `Map.tsx` with `{ ssr: false }`. This prevents Leaflet from crashing during server-side rendering. Shows "Loading map..." placeholder while the component loads.
+
+---
+
+## Phase 6: Polling Hook + Integration
+
+Phase 6 is the critical integration step that connects live data to the UI. It implements the polling hook, status bar, and wires everything together in the main page.
+
+### Files implemented:
+
+### `src/hooks/useAircraftData.ts` — Data Polling Hook
+
+Custom React hook that manages the aircraft data lifecycle.
+
+**State:**
+
+| Field | Type | Description |
+|---|---|---|
+| `aircraft` | `AircraftState[]` | Aircraft with valid positions (pre-filtered) |
+| `loading` | `boolean` | `true` until first fetch completes |
+| `error` | `string \| null` | Error message from last failed fetch, or `null` |
+| `lastUpdated` | `Date \| null` | Timestamp of last successful fetch |
+| `totalCount` | `number` | Total aircraft count from API response (includes those without positions) |
+
+**Behavior:**
+
+1. On mount: immediately calls `fetchMilitaryAircraft()`
+2. Sets up `setInterval` with `POLL_INTERVAL_MS` (reads `NEXT_PUBLIC_POLL_INTERVAL_MS`, defaults to `10000`)
+3. On success: replaces `aircraft` array with position-filtered results, updates `totalCount`, sets `lastUpdated`, clears `error`
+4. On failure: sets `error` message, preserves previous `aircraft` data (map stays populated), continues polling
+5. On unmount: clears the interval
+
+**Design decisions:**
+
+- Pre-filters for positioned aircraft in the hook, so consumers don't need to filter
+- Keeps previous data on error to avoid the map going blank during transient failures
+- Uses `useCallback` for the fetch function to maintain stable reference for `useEffect`
+
+### `src/components/StatusBar.tsx` — Connection Status Display
+
+Fixed bar at the top of the viewport showing real-time data status.
+
+**Layout:** Flexbox row with `justify-between`
+
+| Position | Content |
+|---|---|
+| Left | "Total: {N}" and "Tracked: {N}" (total vs positioned count) |
+| Right | "Updated HH:MM:SS" timestamp and connection indicator |
+
+**Connection indicator:**
+- Green dot + "Connected" when `error` is `null`
+- Red dot + error message when `error` is set
+
+**Styling:** `bg-zinc-900`, white text, `text-xs`, `px-4 py-2`
+
+### `src/app/page.tsx` — Updated Main Page
+
+Wires together all components:
+
+```
+┌─────────────────────────────────────────┐
+│ StatusBar (total, tracked, time, status)│
+├─────────────────────────────────────────┤
+│                                         │
+│           MapWrapper → Map              │
+│        (aircraft markers rendered)      │
+│                                         │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+- Uses `useAircraftData()` hook for data
+- Shows loading placeholder until first fetch completes
+- Passes `aircraft` array to `MapWrapper` → `Map` → `AircraftMarker`s
+- Tracks `selectedAircraft` state for future detail panel
+
+---
+
 ## Remaining Phases
 
 | Phase | Description | Key Deliverables |
 |---|---|---|
-| ~~3~~ | ~~API Proxy Route~~ | ~~Full `/api/aircraft` proxy with upstream fetch, caching, error handling~~ **Done** |
-| 4 | Aircraft Icon | SVG plane silhouette for map markers |
-| 5 | Map Components | `Map.tsx`, `AircraftMarker.tsx`, `MapWrapper.tsx` with Leaflet |
-| 6 | Polling + Integration | `useAircraftData` hook, `StatusBar`, main page wiring |
+| ~~3~~ | ~~API Proxy Route~~ | ~~Done~~ |
+| ~~4~~ | ~~Aircraft Icon~~ | ~~Done (inline SVG in AircraftMarker)~~ |
+| ~~5~~ | ~~Map Components~~ | ~~Done~~ |
+| ~~6~~ | ~~Polling + Integration~~ | ~~Done~~ |
 | 7 | Detail Panel | `AircraftPanel.tsx` slide-in panel for selected aircraft |
 | 8 | Filter Bar | Search, altitude filter, aircraft count display |
 | 9 | Polish | Loading/error/empty states, responsive design, metadata |

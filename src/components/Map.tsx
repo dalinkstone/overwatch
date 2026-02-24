@@ -1,9 +1,11 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import { MapContainer, TileLayer } from "react-leaflet";
+import { useEffect, useRef, useState } from "react";
+import L from "leaflet";
 import { AircraftState, hasPosition } from "@/lib/types";
 import { AircraftMarker } from "./AircraftMarker";
+import { MapContainer, TileLayer } from "react-leaflet";
 
 interface MapProps {
   aircraft: AircraftState[];
@@ -20,24 +22,46 @@ const DEFAULT_ZOOM = parseInt(
 );
 
 const Map = ({ aircraft, onAircraftClick }: MapProps) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+
+    const map = L.map(containerRef.current, {
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+    });
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+
+    mapRef.current = map;
+    setMapReady(true);
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      setMapReady(false);
+    };
+  }, []);
+
   return (
-    <MapContainer
-      center={DEFAULT_CENTER}
-      zoom={DEFAULT_ZOOM}
-      style={{ height: "100%", width: "100%" }}
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      {aircraft.filter(hasPosition).map((ac) => (
-        <AircraftMarker
-          key={ac.hex}
-          aircraft={ac}
-          onClick={onAircraftClick}
-        />
-      ))}
-    </MapContainer>
+    <div ref={containerRef} style={{ height: "100%", width: "100%" }}>
+      {mapReady &&
+        mapRef.current &&
+        aircraft.filter(hasPosition).map((ac) => (
+          <AircraftMarker
+            key={ac.hex}
+            aircraft={ac}
+            onClick={onAircraftClick}
+            map={mapRef.current!}
+          />
+        ))}
+    </div>
   );
 };
 

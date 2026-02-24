@@ -1,19 +1,18 @@
 "use client";
 
-import { memo, useMemo } from "react";
-import { Marker, Popup } from "react-leaflet";
+import { memo, useEffect, useRef } from "react";
 import L from "leaflet";
 import { AircraftState, hasPosition } from "@/lib/types";
 import {
   formatAltitude,
   formatSpeed,
   formatCallsign,
-  getAircraftLabel,
 } from "@/lib/utils";
 
 interface AircraftMarkerProps {
   aircraft: AircraftState;
   onClick: (aircraft: AircraftState) => void;
+  map: L.Map;
 }
 
 const getAltitudeColor = (alt_baro: number | "ground" | undefined): string => {
@@ -33,38 +32,52 @@ const createPlaneIcon = (track: number, color: string): L.DivIcon => {
   });
 };
 
-const AircraftMarkerComponent = ({ aircraft, onClick }: AircraftMarkerProps) => {
-  const icon = useMemo(() => {
+const AircraftMarkerComponent = ({ aircraft, onClick, map }: AircraftMarkerProps) => {
+  const markerRef = useRef<L.Marker | null>(null);
+  const onClickRef = useRef(onClick);
+  onClickRef.current = onClick;
+
+  useEffect(() => {
+    if (!hasPosition(aircraft)) return;
+
+    const lat = aircraft.lat as number;
+    const lon = aircraft.lon as number;
     const color = getAltitudeColor(aircraft.alt_baro);
     const track = aircraft.track ?? 0;
-    return createPlaneIcon(track, color);
-  }, [aircraft.alt_baro, aircraft.track]);
+    const icon = createPlaneIcon(track, color);
 
-  if (!hasPosition(aircraft)) {
-    return null;
-  }
+    const popupContent = `<div style="font-size:13px;line-height:1.5">
+      <div style="font-weight:bold;font-size:14px">${formatCallsign(aircraft.flight)}</div>
+      ${aircraft.t ? `<div>Type: ${aircraft.t}</div>` : ""}
+      ${aircraft.r ? `<div>Reg: ${aircraft.r}</div>` : ""}
+      <div>Alt: ${formatAltitude(aircraft.alt_baro)}</div>
+      <div>Speed: ${formatSpeed(aircraft.gs)}</div>
+    </div>`;
 
-  return (
-    <Marker
-      position={[aircraft.lat as number, aircraft.lon as number]}
-      icon={icon}
-      eventHandlers={{
-        click: () => onClick(aircraft),
-      }}
-    >
-      <Popup>
-        <div className="text-sm leading-relaxed">
-          <div className="font-bold text-base">
-            {formatCallsign(aircraft.flight)}
-          </div>
-          {aircraft.t && <div>Type: {aircraft.t}</div>}
-          {aircraft.r && <div>Reg: {aircraft.r}</div>}
-          <div>Alt: {formatAltitude(aircraft.alt_baro)}</div>
-          <div>Speed: {formatSpeed(aircraft.gs)}</div>
-        </div>
-      </Popup>
-    </Marker>
-  );
+    if (markerRef.current) {
+      markerRef.current.setLatLng([lat, lon]);
+      markerRef.current.setIcon(icon);
+      markerRef.current.getPopup()?.setContent(popupContent);
+    } else {
+      const marker = L.marker([lat, lon], { icon })
+        .addTo(map)
+        .bindPopup(popupContent);
+
+      marker.on("click", () => onClickRef.current(aircraft));
+      markerRef.current = marker;
+    }
+  }, [aircraft, map]);
+
+  useEffect(() => {
+    return () => {
+      if (markerRef.current) {
+        markerRef.current.remove();
+        markerRef.current = null;
+      }
+    };
+  }, []);
+
+  return null;
 };
 
 export const AircraftMarker = memo(AircraftMarkerComponent);
