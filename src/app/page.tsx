@@ -5,8 +5,11 @@ import { MapWrapper } from "@/components/MapWrapper";
 import { StatusBar } from "@/components/StatusBar";
 import { FilterBar } from "@/components/FilterBar";
 import { AircraftPanel } from "@/components/AircraftPanel";
+import { VesselPanel } from "@/components/VesselPanel";
 import { useAircraftData } from "@/hooks/useAircraftData";
+import { useVesselData } from "@/hooks/useVesselData";
 import { AircraftState } from "@/lib/types";
+import { VesselData } from "@/lib/vesselTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 
 const matchesSearch = (ac: AircraftState, query: string): boolean => {
@@ -46,10 +49,17 @@ const matchesCategory = (ac: AircraftState, filter: string): boolean => {
 
 export default function Home() {
   const { aircraft, loading, error, lastUpdated, totalCount } = useAircraftData();
+  const [vesselEnabled] = useState(true);
+  const { vessels } = useVesselData(vesselEnabled);
+
   const [selectedAircraft, setSelectedAircraft] =
     useState<AircraftState | null>(null);
   const [signalLost, setSignalLost] = useState(false);
   const selectedHexRef = useRef<string | null>(null);
+
+  const [selectedVessel, setSelectedVessel] = useState<VesselData | null>(null);
+  const [vesselSignalLost, setVesselSignalLost] = useState(false);
+  const selectedMmsiRef = useRef<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [altitudeFilter, setAltitudeFilter] = useState("all");
@@ -77,12 +87,32 @@ export default function Home() {
     setSelectedAircraft(ac);
     setSignalLost(false);
     selectedHexRef.current = ac.hex;
+    // Close vessel panel
+    setSelectedVessel(null);
+    setVesselSignalLost(false);
+    selectedMmsiRef.current = null;
   }, []);
 
-  const handleClosePanel = useCallback(() => {
+  const handleCloseAircraftPanel = useCallback(() => {
     setSelectedAircraft(null);
     setSignalLost(false);
     selectedHexRef.current = null;
+  }, []);
+
+  const handleVesselClick = useCallback((v: VesselData) => {
+    setSelectedVessel(v);
+    setVesselSignalLost(false);
+    selectedMmsiRef.current = v.mmsi;
+    // Close aircraft panel
+    setSelectedAircraft(null);
+    setSignalLost(false);
+    selectedHexRef.current = null;
+  }, []);
+
+  const handleCloseVesselPanel = useCallback(() => {
+    setSelectedVessel(null);
+    setVesselSignalLost(false);
+    selectedMmsiRef.current = null;
   }, []);
 
   // Update selected aircraft data when new poll results arrive
@@ -98,6 +128,19 @@ export default function Home() {
       setSignalLost(true);
     }
   }, [aircraft]);
+
+  // Update selected vessel data when new poll results arrive
+  useEffect(() => {
+    if (!selectedMmsiRef.current) return;
+
+    const updated = vessels.find((v) => v.mmsi === selectedMmsiRef.current);
+    if (updated) {
+      setSelectedVessel(updated);
+      setVesselSignalLost(false);
+    } else {
+      setVesselSignalLost(true);
+    }
+  }, [vessels]);
 
   return (
     <main className="relative flex h-screen w-screen flex-col">
@@ -135,6 +178,8 @@ export default function Home() {
         <MapWrapper
           aircraft={filteredAircraft}
           onAircraftClick={handleAircraftClick}
+          vessels={vessels}
+          onVesselClick={handleVesselClick}
         />
         {/* Loading overlay */}
         {loading && (
@@ -158,8 +203,13 @@ export default function Home() {
         )}
         <AircraftPanel
           aircraft={selectedAircraft}
-          onClose={handleClosePanel}
+          onClose={handleCloseAircraftPanel}
           signalLost={signalLost}
+        />
+        <VesselPanel
+          vessel={selectedVessel}
+          onClose={handleCloseVesselPanel}
+          signalLost={vesselSignalLost}
         />
       </div>
     </main>
