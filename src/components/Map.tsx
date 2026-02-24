@@ -6,9 +6,11 @@ import L from "leaflet";
 import { AircraftState, hasPosition } from "@/lib/types";
 import { VesselData } from "@/lib/vesselTypes";
 import { SatellitePosition } from "@/lib/satelliteTypes";
+import { AirspaceZone } from "@/lib/airspaceTypes";
 import { AircraftMarker } from "./AircraftMarker";
 import { VesselMarker } from "./VesselMarker";
 import { SatelliteMarker } from "./SatelliteMarker";
+import { AirspaceOverlay, getZoneBounds } from "./AirspaceOverlay";
 
 interface MapProps {
   aircraft: AircraftState[];
@@ -18,6 +20,10 @@ interface MapProps {
   satellites?: SatellitePosition[];
   onSatelliteClick?: (satellite: SatellitePosition) => void;
   satelliteLayerEnabled?: boolean;
+  airspaceZones?: AirspaceZone[];
+  selectedAirspaceZoneId?: string | null;
+  onAirspaceZoneClick?: (zone: AirspaceZone) => void;
+  airspaceLayerEnabled?: boolean;
 }
 
 const DEFAULT_CENTER: [number, number] = [
@@ -29,12 +35,14 @@ const DEFAULT_ZOOM = parseInt(
   10
 );
 
+const AIRSPACE_PANE = "airspace";
 const VESSEL_PANE = "vessels";
 const SATELLITE_PANE = "satellites";
+const AIRSPACE_MIN_ZOOM = 4;
 const VESSEL_MIN_ZOOM = 4;
 const SATELLITE_MIN_ZOOM = 3;
 
-const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, onSatelliteClick, satelliteLayerEnabled }: MapProps) => {
+const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, onSatelliteClick, satelliteLayerEnabled, airspaceZones, selectedAirspaceZoneId, onAirspaceZoneClick, airspaceLayerEnabled }: MapProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -59,6 +67,7 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Data: <a href="https://www.adsb.lol/">ADSB.lol</a> (ODbL) | Icons: <a href="https://adsb-radar.com">ADS-B Radar</a> | Vessel data: <a href="https://aisstream.io">aisstream.io</a> | Satellite data: <a href="https://celestrak.org">CelesTrak</a>',
     }).addTo(map);
 
+    map.createPane(AIRSPACE_PANE).style.zIndex = "420";
     map.createPane(SATELLITE_PANE).style.zIndex = "440";
     map.createPane(VESSEL_PANE).style.zIndex = "450";
 
@@ -79,9 +88,29 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
 
   const handleVesselClick = onVesselClick ?? (() => {});
   const handleSatelliteClick = onSatelliteClick ?? (() => {});
+  const handleAirspaceClick = onAirspaceZoneClick ?? (() => {});
 
+  const showAirspace = airspaceLayerEnabled && zoom >= AIRSPACE_MIN_ZOOM;
   const showVessels = zoom >= VESSEL_MIN_ZOOM;
   const showSatellites = satelliteLayerEnabled && zoom >= SATELLITE_MIN_ZOOM;
+
+  // Cache zone bounding boxes — recomputed only when zones array changes
+  const zoneBoundsMap = useMemo(() => {
+    const boundsMap: Record<string, L.LatLngBounds> = {};
+    for (const zone of airspaceZones ?? []) {
+      const b = getZoneBounds(zone);
+      if (b) boundsMap[zone.id] = b;
+    }
+    return boundsMap;
+  }, [airspaceZones]);
+
+  const visibleZones = useMemo(() => {
+    if (!showAirspace || !bounds || !airspaceZones?.length) return [];
+    return airspaceZones.filter((zone) => {
+      const zb = zoneBoundsMap[zone.id];
+      return zb ? bounds.intersects(zb) : false;
+    });
+  }, [airspaceZones, bounds, showAirspace, zoneBoundsMap]);
 
   const visibleVessels = useMemo(() => {
     if (!showVessels || !bounds || !vessels?.length) return [];
@@ -95,6 +124,15 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
 
   return (
     <div ref={containerRef} style={{ height: "100%", width: "100%" }}>
+      {mapReady && mapRef.current && showAirspace && (
+        <AirspaceOverlay
+          zones={visibleZones}
+          selectedZoneId={selectedAirspaceZoneId ?? null}
+          onZoneClick={handleAirspaceClick}
+          map={mapRef.current}
+          pane={AIRSPACE_PANE}
+        />
+      )}
       {mapReady &&
         mapRef.current &&
         aircraft.filter(hasPosition).map((ac) => (
@@ -127,6 +165,11 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
             pane={SATELLITE_PANE}
           />
         ))}
+      {mapReady && airspaceLayerEnabled && airspaceZones && airspaceZones.length > 0 && !showAirspace && (
+        <div className="absolute bottom-8 left-1/2 z-[600] -translate-x-1/2 rounded bg-zinc-800/90 px-3 py-1.5 text-xs text-zinc-300 shadow-lg backdrop-blur-sm">
+          Zoom in to see airspace (zoom {AIRSPACE_MIN_ZOOM}+)
+        </div>
+      )}
       {mapReady && vessels && vessels.length > 0 && !showVessels && (
         <div className="absolute bottom-16 left-1/2 z-[600] -translate-x-1/2 rounded bg-zinc-800/90 px-3 py-1.5 text-xs text-zinc-300 shadow-lg backdrop-blur-sm">
           Zoom in to see vessels (zoom {VESSEL_MIN_ZOOM}+)

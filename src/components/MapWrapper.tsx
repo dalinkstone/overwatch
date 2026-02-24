@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { AircraftState } from "@/lib/types";
 import { VesselData } from "@/lib/vesselTypes";
 import { SatellitePosition } from "@/lib/satelliteTypes";
+import { AirspaceZone } from "@/lib/airspaceTypes";
 
 const Map = dynamic(() => import("./Map"), {
   ssr: false,
@@ -22,6 +23,10 @@ interface MapWrapperProps {
   satellites?: SatellitePosition[];
   onSatelliteClick?: (satellite: SatellitePosition) => void;
   satelliteLayerEnabled?: boolean;
+  airspaceZones?: AirspaceZone[];
+  selectedAirspaceZoneId?: string | null;
+  onAirspaceZoneClick?: (zone: AirspaceZone) => void;
+  airspaceLayerEnabled?: boolean;
 }
 
 export const MapWrapper = ({
@@ -32,6 +37,10 @@ export const MapWrapper = ({
   satellites,
   onSatelliteClick,
   satelliteLayerEnabled,
+  airspaceZones,
+  selectedAirspaceZoneId,
+  onAirspaceZoneClick,
+  airspaceLayerEnabled,
 }: MapWrapperProps) => {
   return (
     <Map
@@ -42,6 +51,10 @@ export const MapWrapper = ({
       satellites={satellites}
       onSatelliteClick={onSatelliteClick}
       satelliteLayerEnabled={satelliteLayerEnabled}
+      airspaceZones={airspaceZones}
+      selectedAirspaceZoneId={selectedAirspaceZoneId}
+      onAirspaceZoneClick={onAirspaceZoneClick}
+      airspaceLayerEnabled={airspaceLayerEnabled}
     />
   );
 };
