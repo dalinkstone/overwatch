@@ -357,7 +357,6 @@ next@16
 react@18
 react-dom@18
 leaflet@1
-react-leaflet@4
 @types/leaflet
 tailwindcss@3
 postcss

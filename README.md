@@ -126,7 +126,7 @@ Real-time seismic data as GeoJSON. Supplementary awareness layer — large seism
 | **Runtime** | Node.js 20+ | LTS, stable |
 | **Language** | TypeScript 5 | Type safety |
 | **Framework** | Next.js 16 (App Router) | Simple fullstack, API routes as proxy |
-| **Map** | Leaflet 1.9 + react-leaflet 4 | Free, no API key, OSM tiles |
+| **Map** | Leaflet 1.9 (vanilla) | Free, no API key, OSM tiles |
 | **Tiles** | OpenStreetMap via `tile.openstreetmap.org` | Free, open, reliable |
 | **Styling** | Tailwind CSS 3 | Utility-first, minimal config |
 | **HTTP** | Native `fetch` | No extra dependencies |
@@ -146,14 +146,12 @@ Real-time seismic data as GeoJSON. Supplementary awareness layer — large seism
 overwatch/
 ├── CLAUDE.md                    # Claude Code conventions
 ├── README.md                    # This file
-├── PLAN.md                      # Build prompts for Claude Code
-├── IMPLEMENTATION.md            # Detailed technical implementation docs
 ├── package.json
 ├── tsconfig.json
 ├── tailwind.config.ts
 ├── next.config.mjs
 ├── eslint.config.mjs            # ESLint 10 flat config
-├── .env.example                 # NEXT_PUBLIC_API_BASE_URL etc.
+├── .env.example                 # Environment variable template
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx           # Root layout + metadata
@@ -182,8 +180,6 @@ overwatch/
     └── favicon.svg              # Favicon (also served from src/app/icon.svg)
 ```
 
-Planned files for future data layers (vessels, satellites, conflicts, NOTAMs) are documented in IMPLEMENTATION.md.
-
 ## Running Locally
 
 ```bash
@@ -201,7 +197,7 @@ Open `http://localhost:3000`. No API keys needed. You should see a status bar, f
 | Variable | Default | Description |
 |---|---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | `https://api.adsb.lol` | Upstream ADS-B API base |
-| `POLL_INTERVAL_MS` | `10000` | How often to refresh aircraft data |
+| `NEXT_PUBLIC_POLL_INTERVAL_MS` | `10000` | How often to refresh aircraft data (ms) |
 | `NEXT_PUBLIC_DEFAULT_LAT` | `38.9` | Default map center latitude |
 | `NEXT_PUBLIC_DEFAULT_LNG` | `-77.0` | Default map center longitude |
 | `NEXT_PUBLIC_DEFAULT_ZOOM` | `5` | Default map zoom level |
