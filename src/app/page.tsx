@@ -13,6 +13,7 @@ import { useVesselData } from "@/hooks/useVesselData";
 import { AircraftState } from "@/lib/types";
 import { VesselData, VesselCategory, getVesselCategory } from "@/lib/vesselTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
+import { getCountryFromHex } from "@/lib/countryLookup";
 
 const VESSEL_LAYER_KEY = "overwatch-vessel-layer";
 
@@ -51,6 +52,40 @@ const matchesCategory = (ac: AircraftState, filter: string): boolean => {
   return getAircraftCategory(ac.t) === (filter as AircraftCategory);
 };
 
+const matchesCountry = (ac: AircraftState, filter: string): boolean => {
+  if (filter === "all") return true;
+  const info = getCountryFromHex(ac.hex);
+  return info?.country === filter;
+};
+
+const matchesSpeed = (ac: AircraftState, filter: string): boolean => {
+  if (filter === "all") return true;
+  const gs = ac.gs;
+  if (gs === undefined || gs === null) return filter === "stationary";
+  if (filter === "stationary") return gs < 50;
+  if (filter === "slow") return gs >= 50 && gs <= 200;
+  if (filter === "cruise") return gs > 200 && gs <= 500;
+  if (filter === "fast") return gs > 500;
+  return true;
+};
+
+const matchesVesselSpeed = (v: VesselData, filter: string): boolean => {
+  if (filter === "all") return true;
+  const sog = v.sog;
+  if (sog === undefined || sog === null) return filter === "anchored";
+  if (filter === "anchored") return sog < 1;
+  if (filter === "slow") return sog >= 1 && sog <= 10;
+  if (filter === "cruising") return sog > 10 && sog <= 20;
+  if (filter === "fast") return sog > 20;
+  return true;
+};
+
+const matchesVesselDestination = (v: VesselData, query: string): boolean => {
+  if (!query.trim()) return true;
+  if (!v.destination) return false;
+  return v.destination.toLowerCase().includes(query.trim().toLowerCase());
+};
+
 export default function Home() {
   const { aircraft, loading, error, lastUpdated, totalCount } = useAircraftData();
 
@@ -81,6 +116,8 @@ export default function Home() {
       selectedMmsiRef.current = null;
       setVesselCountryFilter("all");
       setVesselCategoryFilter("all");
+      setVesselSpeedFilter("all");
+      setVesselDestSearch("");
     }
   }, []);
 
@@ -97,8 +134,13 @@ export default function Home() {
   const [altitudeFilter, setAltitudeFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
 
+  const [countryFilter, setCountryFilter] = useState("all");
+  const [speedFilter, setSpeedFilter] = useState("all");
+
   const [vesselCountryFilter, setVesselCountryFilter] = useState("all");
   const [vesselCategoryFilter, setVesselCategoryFilter] = useState("all");
+  const [vesselSpeedFilter, setVesselSpeedFilter] = useState("all");
+  const [vesselDestSearch, setVesselDestSearch] = useState("");
 
   const filteredAircraft = useMemo(() => {
     let result = aircraft;
@@ -115,8 +157,16 @@ export default function Home() {
       result = result.filter((ac) => matchesCategory(ac, categoryFilter));
     }
 
+    if (countryFilter !== "all") {
+      result = result.filter((ac) => matchesCountry(ac, countryFilter));
+    }
+
+    if (speedFilter !== "all") {
+      result = result.filter((ac) => matchesSpeed(ac, speedFilter));
+    }
+
     return result;
-  }, [aircraft, searchQuery, altitudeFilter, categoryFilter]);
+  }, [aircraft, searchQuery, altitudeFilter, categoryFilter, countryFilter, speedFilter]);
 
   const filteredVessels = useMemo(() => {
     let result = vessels;
@@ -132,8 +182,27 @@ export default function Home() {
       });
     }
 
+    if (vesselSpeedFilter !== "all") {
+      result = result.filter((v) => matchesVesselSpeed(v, vesselSpeedFilter));
+    }
+
+    if (vesselDestSearch.trim()) {
+      result = result.filter((v) => matchesVesselDestination(v, vesselDestSearch));
+    }
+
     return result;
-  }, [vessels, vesselCountryFilter, vesselCategoryFilter]);
+  }, [vessels, vesselCountryFilter, vesselCategoryFilter, vesselSpeedFilter, vesselDestSearch]);
+
+  const aircraftCountries = useMemo(() => {
+    const countrySet = new Set<string>();
+    for (const ac of aircraft) {
+      const info = getCountryFromHex(ac.hex);
+      if (info) {
+        countrySet.add(info.country);
+      }
+    }
+    return Array.from(countrySet).sort();
+  }, [aircraft]);
 
   const vesselCountries = useMemo(() => {
     const countrySet = new Set<string>();
@@ -221,8 +290,13 @@ export default function Home() {
         onAltitudeFilterChange={setAltitudeFilter}
         categoryFilter={categoryFilter}
         onCategoryFilterChange={setCategoryFilter}
+        countryFilter={countryFilter}
+        onCountryFilterChange={setCountryFilter}
+        speedFilter={speedFilter}
+        onSpeedFilterChange={setSpeedFilter}
         filteredCount={filteredAircraft.length}
         totalCount={aircraft.length}
+        countries={aircraftCountries}
       />
       {vesselEnabled && (
         <VesselFilterBar
@@ -230,6 +304,10 @@ export default function Home() {
           onCountryFilterChange={setVesselCountryFilter}
           categoryFilter={vesselCategoryFilter}
           onCategoryFilterChange={setVesselCategoryFilter}
+          speedFilter={vesselSpeedFilter}
+          onSpeedFilterChange={setVesselSpeedFilter}
+          destSearch={vesselDestSearch}
+          onDestSearchChange={setVesselDestSearch}
           filteredCount={filteredVessels.length}
           totalCount={vessels.length}
           countries={vesselCountries}

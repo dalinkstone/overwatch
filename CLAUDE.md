@@ -304,6 +304,8 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - **Search:** text input matching callsign, registration, hex, or type code (case-insensitive)
 - **Altitude filter:** All / Ground / Below 10k / 10k-30k / Above 30k
 - **Category filter:** All / Fighter / Tanker-Transport / Helicopter / Surveillance / Trainer / Bomber / UAV / Unknown
+- **Country filter:** dynamically populated dropdown from live aircraft data (countries derived from ICAO hex via `getCountryFromHex()`)
+- **Speed filter:** All speeds / Stationary (< 50 kts) / Slow (50–200 kts) / Cruise (200–500 kts) / Fast (> 500 kts)
 - **Count display:** "Showing X of Y military aircraft" (hidden on mobile)
 - **Responsive:** search input full-width on mobile (<768px), dropdowns flex to fill row
 
@@ -313,8 +315,10 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - Blue accent color (`blue-400`) with ship icon + "Vessels" label to distinguish from aircraft filters
 - **Country/flag filter:** dynamically populated dropdown from live vessel data (only countries with currently tracked vessels)
 - **Category filter:** All types / Military / Cargo / Tanker / Passenger / Fishing / Tug/Pilot / High-Speed Craft / Pleasure Craft / Other
+- **Speed filter:** All speeds / Anchored (< 1 kt) / Slow (1–10 kts) / Cruising (10–20 kts) / Fast (> 20 kts)
+- **Destination search:** text input matching vessel destination field (case-insensitive), blue focus ring, magnifying glass + clear button
 - **Count display:** "Showing X of Y vessels" (hidden on mobile)
-- Props: `countryFilter`, `onCountryFilterChange`, `categoryFilter`, `onCategoryFilterChange`, `filteredCount`, `totalCount`, `countries: string[]`
+- Props: `countryFilter`, `onCountryFilterChange`, `categoryFilter`, `onCategoryFilterChange`, `speedFilter`, `onSpeedFilterChange`, `destSearch`, `onDestSearchChange`, `filteredCount`, `totalCount`, `countries: string[]`
 
 ### LayerControl (src/components/LayerControl.tsx)
 
@@ -332,7 +336,8 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - **Vessel selection:** `selectedVessel` + `vesselSignalLost` state, same pattern as aircraft — updates by MMSI match, signal lost on disappearance
 - **Mutual exclusivity:** clicking an aircraft closes the vessel panel and vice versa; only one detail panel open at a time
 - **Vessel layer toggle:** state hydrated from `localStorage` after mount (avoids SSR mismatch), passed to `useVesselData(enabled)`, turning off clears vessel selection and filters
-- **Independent filtering:** aircraft filters (search, altitude, category) and vessel filters (country, category) operate independently via separate `useMemo` chains
+- **Independent filtering:** aircraft filters (search, altitude, category, country, speed) and vessel filters (country, category, speed, destination) operate independently via separate `useMemo` chains
+- **Aircraft countries:** dynamically computed from ICAO hex via `getCountryFromHex()`, sorted alphabetically
 - **Vessel countries:** dynamically computed from live vessel data, excluding "Unknown" entries, sorted alphabetically
 
 ### Loading / Error / Empty States (src/app/page.tsx)

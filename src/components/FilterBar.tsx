@@ -7,8 +7,13 @@ interface FilterBarProps {
   onAltitudeFilterChange: (filter: string) => void;
   categoryFilter: string;
   onCategoryFilterChange: (filter: string) => void;
+  countryFilter: string;
+  onCountryFilterChange: (filter: string) => void;
+  speedFilter: string;
+  onSpeedFilterChange: (filter: string) => void;
   filteredCount: number;
   totalCount: number;
+  countries: string[];
 }
 
 export const FilterBar = ({
@@ -18,8 +23,13 @@ export const FilterBar = ({
   onAltitudeFilterChange,
   categoryFilter,
   onCategoryFilterChange,
+  countryFilter,
+  onCountryFilterChange,
+  speedFilter,
+  onSpeedFilterChange,
   filteredCount,
   totalCount,
+  countries,
 }: FilterBarProps) => {
   return (
     <div className="flex flex-wrap items-center gap-2 bg-zinc-800 px-3 py-2 text-xs text-white border-t border-zinc-700/50 md:gap-3 md:px-4">
@@ -90,6 +100,33 @@ export const FilterBar = ({
         <option value="bomber">Bomber</option>
         <option value="uav">UAV</option>
         <option value="unknown">Unknown</option>
+      </select>
+
+      {/* Country filter */}
+      <select
+        value={countryFilter}
+        onChange={(e) => onCountryFilterChange(e.target.value)}
+        className="h-7 flex-1 rounded bg-zinc-900 px-2 text-xs text-white outline-none ring-1 ring-zinc-700 transition-colors focus:ring-amber-500/50 cursor-pointer md:flex-none"
+      >
+        <option value="all">All countries</option>
+        {countries.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+
+      {/* Speed filter */}
+      <select
+        value={speedFilter}
+        onChange={(e) => onSpeedFilterChange(e.target.value)}
+        className="h-7 flex-1 rounded bg-zinc-900 px-2 text-xs text-white outline-none ring-1 ring-zinc-700 transition-colors focus:ring-amber-500/50 cursor-pointer md:flex-none"
+      >
+        <option value="all">All speeds</option>
+        <option value="stationary">Stationary (&lt; 50 kts)</option>
+        <option value="slow">Slow (50–200 kts)</option>
+        <option value="cruise">Cruise (200–500 kts)</option>
+        <option value="fast">Fast (&gt; 500 kts)</option>
       </select>
 
       {/* Aircraft count */}
