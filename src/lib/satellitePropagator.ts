@@ -55,7 +55,7 @@ export const propagateSatellites = (ommRecords: SatelliteOMM[]): SatellitePositi
 
       const period = 1440 / record.MEAN_MOTION;
 
-      results.push({
+      const position: SatellitePosition = {
         noradId: record.NORAD_CAT_ID,
         name: record.OBJECT_NAME,
         objectId: record.OBJECT_ID,
@@ -67,7 +67,17 @@ export const propagateSatellites = (ommRecords: SatelliteOMM[]): SatellitePositi
         epoch: record.EPOCH,
         inclination: record.INCLINATION,
         period,
-      });
+      };
+
+      if (record.sourceGroup) position.sourceGroup = record.sourceGroup;
+
+      // Pass through SATCAT metadata if present on the OMM record
+      const extended = record as SatelliteOMM & { owner?: string; launchDate?: string; launchSite?: string };
+      if (extended.owner) position.owner = extended.owner;
+      if (extended.launchDate) position.launchDate = extended.launchDate;
+      if (extended.launchSite) position.launchSite = extended.launchSite;
+
+      results.push(position);
     } catch {
       // Skip satellites with invalid orbital elements
       continue;

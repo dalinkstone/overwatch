@@ -108,6 +108,54 @@ const isValidOMM = (record: unknown): record is SatelliteOMM => {
   );
 };
 
+/** SATCAT record shape (subset of fields we need). */
+interface SatcatRecord {
+  NORAD_CAT_ID: number;
+  OWNER: string;
+  LAUNCH_DATE: string;
+  LAUNCH_SITE: string;
+}
+
+/** Type guard for SATCAT records. */
+const isValidSatcat = (record: unknown): record is SatcatRecord => {
+  if (typeof record !== "object" || record === null) return false;
+  const r = record as Record<string, unknown>;
+  return (
+    typeof r.NORAD_CAT_ID === "number" &&
+    typeof r.OWNER === "string" &&
+    typeof r.LAUNCH_DATE === "string" &&
+    typeof r.LAUNCH_SITE === "string"
+  );
+};
+
+/** Fetch SATCAT metadata for the military group. */
+const fetchSatcat = async (): Promise<Map<number, SatcatRecord>> => {
+  const map = new Map<number, SatcatRecord>();
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(
+        "https://celestrak.org/satcat/records.php?GROUP=military&FORMAT=json",
+        { signal: controller.signal }
+      );
+      if (!response.ok) return map;
+      const data: unknown = await response.json();
+      if (!Array.isArray(data)) return map;
+      for (const record of data) {
+        if (isValidSatcat(record)) {
+          map.set(record.NORAD_CAT_ID, record);
+        }
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch {
+    // SATCAT fetch is non-critical — return empty map on failure
+  }
+  return map;
+};
+
 /**
  * Merge multiple OMM arrays, deduplicating by NORAD_CAT_ID.
  * Earlier arrays in the list take priority on duplicates (military first).
@@ -129,27 +177,36 @@ const mergeAndDeduplicate = (
 };
 
 export async function GET() {
-  const results = await Promise.allSettled(
-    CATALOG_GROUPS.map((group) => fetchCatalog(`${CELESTRAK_BASE}${group}`))
-  );
+  // Fetch OMM catalogs and SATCAT metadata in parallel
+  const [catalogResults, satcatMap] = await Promise.all([
+    Promise.allSettled(
+      CATALOG_GROUPS.map((group) => fetchCatalog(`${CELESTRAK_BASE}${group}`))
+    ),
+    fetchSatcat(),
+  ]);
 
   // Collect successfully fetched and validated catalogs
   const validatedCatalogs: SatelliteOMM[][] = [];
   let successCount = 0;
   const errors: string[] = [];
 
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i];
+  for (let i = 0; i < catalogResults.length; i++) {
+    const result = catalogResults[i];
+    const group = CATALOG_GROUPS[i];
     if (result.status === "fulfilled") {
       let validated = (result.value as unknown[]).filter(isValidOMM);
       // Filter the large GEO catalog to only military-relevant satellites
-      if (CATALOG_GROUPS[i] === "geo") {
+      if (group === "geo") {
         validated = validated.filter((sat) => isGeoMilitary(sat.OBJECT_NAME));
+      }
+      // Tag each record with its source group
+      for (const sat of validated) {
+        sat.sourceGroup = group;
       }
       validatedCatalogs.push(validated);
       successCount++;
     } else {
-      errors.push(`${CATALOG_GROUPS[i]}: ${String(result.reason)}`);
+      errors.push(`${group}: ${String(result.reason)}`);
     }
   }
 
@@ -165,6 +222,20 @@ export async function GET() {
   }
 
   const satellites = mergeAndDeduplicate(validatedCatalogs);
+
+  // Merge SATCAT metadata into OMM records by NORAD_CAT_ID
+  if (satcatMap.size > 0) {
+    for (const sat of satellites) {
+      const satcat = satcatMap.get(sat.NORAD_CAT_ID);
+      if (satcat) {
+        const extended = sat as SatelliteOMM & { owner?: string; launchDate?: string; launchSite?: string };
+        extended.owner = satcat.OWNER;
+        extended.launchDate = satcat.LAUNCH_DATE;
+        extended.launchSite = satcat.LAUNCH_SITE;
+      }
+    }
+  }
+
   const partial = successCount < CATALOG_GROUPS.length;
 
   return NextResponse.json(

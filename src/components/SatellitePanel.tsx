@@ -8,6 +8,12 @@ import {
   formatPeriod,
   getOrbitType,
 } from "@/lib/satelliteTypes";
+import {
+  getSatelliteDescription,
+  formatLaunchDate,
+  formatLaunchSite,
+  formatOwner,
+} from "@/lib/satelliteDescriptions";
 
 interface SatellitePanelProps {
   satellite: SatellitePosition | null;
@@ -16,7 +22,7 @@ interface SatellitePanelProps {
 }
 
 const formatCoordinate = (value: number): string => {
-  return value.toFixed(4) + "°";
+  return value.toFixed(4) + "\u00B0";
 };
 
 const formatEpoch = (epoch: string): string => {
@@ -37,6 +43,10 @@ export const SatellitePanel = ({
   onClose,
   signalLost,
 }: SatellitePanelProps) => {
+  const description = satellite
+    ? getSatelliteDescription(satellite.name, satellite.noradId, satellite.sourceGroup)
+    : null;
+
   return (
     <div
       className={`absolute z-[600] transform bg-zinc-900 text-white transition-transform duration-300 ease-in-out
@@ -99,8 +109,89 @@ export const SatellitePanel = ({
             </div>
           )}
 
-          {/* Orbit Info section */}
+          {/* About section */}
           <div className="mb-3">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-purple-400">
+              About
+            </div>
+            {description ? (
+              <div className="space-y-2">
+                <p
+                  className={`text-sm leading-relaxed text-zinc-400 ${
+                    description.confidence === "classified" ? "italic" : ""
+                  }`}
+                >
+                  {description.confidence === "classified" && (
+                    <span className="mr-1">&#128274;</span>
+                  )}
+                  {description.description}
+                </p>
+                <DetailRow label="Operator" value={description.operator} />
+                {description.constellation && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-zinc-400">Constellation</span>
+                    <span
+                      className="rounded-full px-2 py-0.5 text-xs font-medium"
+                      style={{
+                        backgroundColor:
+                          SATELLITE_COLORS[satellite.category] + "33",
+                        color: SATELLITE_COLORS[satellite.category],
+                      }}
+                    >
+                      {description.constellation}
+                    </span>
+                  </div>
+                )}
+                {description.manufacturer && (
+                  <DetailRow
+                    label="Manufacturer"
+                    value={description.manufacturer}
+                  />
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-600">
+                No description available for this satellite.
+              </p>
+            )}
+          </div>
+
+          {/* Metadata section (launch info from SATCAT) */}
+          {(satellite.launchDate || satellite.launchSite || satellite.owner) && (
+            <>
+              <div className="border-t border-purple-400/20" />
+              <div className="mb-3 mt-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-purple-400">
+                  Launch Info
+                </div>
+                <div className="space-y-3">
+                  {satellite.launchDate && (
+                    <DetailRow
+                      label="Launch Date"
+                      value={formatLaunchDate(satellite.launchDate)}
+                    />
+                  )}
+                  {satellite.launchSite && (
+                    <DetailRow
+                      label="Launch Site"
+                      value={formatLaunchSite(satellite.launchSite)}
+                    />
+                  )}
+                  {satellite.owner && (
+                    <DetailRow
+                      label="Country/Owner"
+                      value={formatOwner(satellite.owner)}
+                    />
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="border-t border-purple-400/20" />
+
+          {/* Orbit Info section */}
+          <div className="mb-3 mt-3">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-purple-400">
               Orbit Info
             </div>
@@ -115,7 +206,7 @@ export const SatellitePanel = ({
               />
               <DetailRow
                 label="Inclination"
-                value={`${satellite.inclination.toFixed(1)}°`}
+                value={`${satellite.inclination.toFixed(1)}\u00B0`}
               />
               <DetailRow
                 label="Orbit Type"
@@ -172,6 +263,15 @@ export const SatellitePanel = ({
                 value={`${Math.round(satellite.altitude).toLocaleString()} km`}
               />
             </div>
+          </div>
+
+          {/* Footer disclaimer */}
+          <div className="mt-4 border-t border-zinc-700 pt-3">
+            <p className="text-xs text-zinc-600">
+              {description?.confidence === "classified"
+                ? "Mission details sourced from publicly available records only."
+                : "Descriptions based on publicly available program documentation."}
+            </p>
           </div>
         </div>
       )}

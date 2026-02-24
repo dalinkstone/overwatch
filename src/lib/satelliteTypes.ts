@@ -22,6 +22,7 @@ export interface SatelliteOMM {
   BSTAR: number;
   MEAN_MOTION_DOT: number;
   MEAN_MOTION_DDOT: number;
+  sourceGroup?: string;
 }
 
 /** Computed satellite position and metadata. */
@@ -40,6 +41,10 @@ export interface SatellitePosition {
   inclination: number;
   /** Orbital period in minutes (1440 / MEAN_MOTION) */
   period: number;
+  sourceGroup?: string;
+  owner?: string;
+  launchDate?: string;
+  launchSite?: string;
 }
 
 /** Satellite classification categories. */

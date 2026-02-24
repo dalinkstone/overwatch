@@ -9,6 +9,7 @@ import {
   formatAltitude,
   formatPeriod,
 } from "@/lib/satelliteTypes";
+import { getSatelliteDescription } from "@/lib/satelliteDescriptions";
 
 interface SatelliteMarkerProps {
   satellite: SatellitePosition;
@@ -50,17 +51,30 @@ const createSatelliteIcon = (
   });
 };
 
+const getDescriptionSnippet = (satellite: SatellitePosition): string => {
+  const desc = getSatelliteDescription(satellite.name, satellite.noradId, satellite.sourceGroup);
+  if (!desc) return "";
+  if (desc.confidence === "classified") return "&#128274; Classified";
+  const text = desc.description;
+  if (text.length <= 80) return text;
+  return text.slice(0, 77) + "...";
+};
+
 const buildPopupContent = (satellite: SatellitePosition): string => {
   const categoryLabel = SATELLITE_CATEGORY_LABELS[satellite.category];
   const color = SATELLITE_COLORS[satellite.category];
+  const snippet = getDescriptionSnippet(satellite);
+  const snippetHtml = snippet
+    ? `<div style="color:#a1a1aa;font-size:11px;margin-top:2px">${snippet}</div>`
+    : "";
 
   return `<div style="font-size:13px;line-height:1.5">
     <div style="font-weight:bold;font-size:14px">${satellite.name}</div>
-    <div><span style="background:${color};color:white;padding:1px 6px;border-radius:4px;font-size:11px">${categoryLabel}</span></div>
+    <div><span style="background:${color};color:white;padding:1px 6px;border-radius:4px;font-size:11px">${categoryLabel}</span></div>${snippetHtml}
     <div>NORAD: ${satellite.noradId}</div>
     <div>Alt: ${formatAltitude(satellite.altitude)}</div>
     <div>Period: ${formatPeriod(satellite.period)}</div>
-    <div>Incl: ${satellite.inclination.toFixed(1)}°</div>
+    <div>Incl: ${satellite.inclination.toFixed(1)}\u00B0</div>
   </div>`;
 };
 
