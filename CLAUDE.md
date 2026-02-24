@@ -41,6 +41,8 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 | `src/components/FilterBar.tsx` | Done | Search (callsign/reg/hex/type), altitude band filter, category filter, aircraft count — responsive (full-width search on mobile) |
 | `eslint.config.mjs` | Done | ESLint 10 flat config with `@eslint/js` + `typescript-eslint` |
 | `src/lib/env.ts` | Done | `getAisStreamApiKey()`, `isVesselTrackingEnabled()` — server-side only environment helpers |
+| `src/lib/vesselTypes.ts` | Done | `VesselData` interface, `VesselCategory` type, `getVesselCategory()`, `getMIDFromMMSI()`, `getCountryFromMID()` (MID lookup for 60+ nations), `identifyMilitaryVessel()` (type code + name pattern + MMSI heuristics), `VESSEL_COLORS` |
+| `src/lib/aisStreamManager.ts` | Done | Singleton server-side WebSocket manager for aisstream.io — `initAisStream()`, `getVessels()`, `getConnectionStatus()`; handles reconnection, staleness cleanup, message parsing |
 
 ### What's Planned
 
@@ -258,6 +260,38 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - **Error:** Red banner below FilterBar — "Unable to reach aircraft data source. Retrying..." with last successful update time. Map still shows last known positions.
 - **Empty:** Centered message on map — "No military aircraft currently broadcasting" (when API returns 0 aircraft and no error)
 
+### Vessel Types & Utilities (src/lib/vesselTypes.ts)
+
+- `VesselData` — interface for a single AIS vessel: `mmsi`, `name`, `lat`, `lon`, `cog`, `sog`, `heading`, `shipType`, `destination`, `flag`, `isMilitary`, `militaryCategory`, `lastUpdate`
+- `VesselCategory` — display category union: `'military' | 'cargo' | 'tanker' | 'passenger' | 'fishing' | 'tug' | 'highspeed' | 'pleasure' | 'other'`
+- `getVesselCategory(shipType)` — maps AIS type code (0-99) to `VesselCategory`
+- `getMIDFromMMSI(mmsi)` — extracts first 3 digits (Maritime Identification Digits) from MMSI
+- `getCountryFromMID(mid)` — looks up country name from MID code (60+ nations including flag-of-convenience states)
+- `identifyMilitaryVessel(mmsi, shipType, name)` — returns `{ isMilitary, category }` using three signal checks: AIS type codes 35/55, name pattern matching (USS, HMS, USCG, etc.), and MMSI prefix 3669 (US federal)
+- `VESSEL_COLORS` — display color per `VesselCategory` (military red, cargo blue, tanker orange, etc.)
+
+### AIS Stream Manager (src/lib/aisStreamManager.ts)
+
+Server-side singleton module that maintains a persistent WebSocket connection to aisstream.io and accumulates vessel data in memory. Uses the `ws` npm package (NOT browser WebSocket). Imported only by API route handlers.
+
+**Exported functions:**
+- `initAisStream()` — starts WebSocket connection (no-op if already connected or API key missing). Subscribes to global bounding box `[[-90,-180],[90,180]]` for `PositionReport` and `ShipStaticData` message types.
+- `getVessels()` — returns `VesselData[]` snapshot of all currently tracked vessels
+- `getConnectionStatus()` — returns `{ state, vesselCount, lastMessage }` where state is `'disabled' | 'disconnected' | 'connecting' | 'connected' | 'error'`
+
+**Internal behavior:**
+- Processes two aisstream.io message types: `PositionReport` (lat, lon, cog, sog, heading) and `ShipStaticData` (ship type, destination, name)
+- All messages are validated via type narrowing — no `any` types
+- Vessels stored in a `Map<string, VesselData>` keyed by MMSI
+- On each message: computes flag via MID lookup, runs military identification, updates vessel entry
+- Automatic reconnection: 5s delay for first 10 attempts, then 60s backoff reset
+- Staleness cleanup: every 60s removes vessels not updated in 10 minutes
+
+**Data flow for vessel layer:**
+```
+aisstream.io WSS → aisStreamManager (server singleton) → /api/vessels GET → useVesselData hook → Map
+```
+
 ---
 
 ## Additional Data Layers (Planned)
@@ -270,9 +304,9 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 |---|---|---|---|
 | **aisstream.io (active)** | `wss://stream.aisstream.io/v0/stream` | Free API key | Global coverage, WebSocket, real-time |
 
-**Implementation:** Server-side WebSocket connection via `ws` package. API key stored in `AISSTREAM_API_KEY` env var (server-side only). Previous Digitraffic REST implementation was removed in favor of aisstream.io for global coverage.
+**Implementation:** Server-side WebSocket connection via `ws` package managed by `aisStreamManager.ts` singleton. API key stored in `AISSTREAM_API_KEY` env var (server-side only). Previous Digitraffic REST implementation was removed in favor of aisstream.io for global coverage. Types and military identification logic in `vesselTypes.ts`. API route and client-side components still to come.
 
-**Military vessel identification:** MMSI numbers starting with MID range 338-369 (US-flagged). Vessel type codes 35 (military ops) and 55 (law enforcement).
+**Military vessel identification:** AIS type code 35 (military ops), type code 55 (law enforcement), warship name patterns (USS, HMS, USCG, etc.), coast guard name patterns, and MMSI prefix 3669 (US federal NTIA assignment). Implemented in `identifyMilitaryVessel()` in `vesselTypes.ts`.
 
 ### Layer 2: Satellite Tracking
 
