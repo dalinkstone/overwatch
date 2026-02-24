@@ -9,6 +9,7 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 - **Phase 1 (Scaffold):** Complete — project structure, dependencies, configuration
 - **Phase 2 (Types & API Utility Layer):** Complete — TypeScript interfaces, helper functions, API client
 - **Phase 3 (API Proxy Route):** Complete — full upstream proxy with caching, timeout, error handling
+- **Phase 5 (Map Components):** Complete — AircraftMarker, Map, MapWrapper with dynamic import (no SSR)
 
 ### What's Implemented
 
@@ -19,8 +20,10 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 | `src/lib/api.ts` | Done | `fetchMilitaryAircraft` — fetches from local proxy with validation |
 | `src/app/api/aircraft/route.ts` | Done | Proxies to ADSB.lol `/v2/mil` with 15s timeout, cache headers, structured 502 errors |
 | `src/app/layout.tsx` | Done | Root layout with metadata and globals.css import |
-| `src/app/page.tsx` | Placeholder | Renders `<h1>Overwatch</h1>` — needs map integration (Phase 5-6) |
-| `src/components/` | Empty | Map, AircraftMarker, StatusBar, etc. not yet created |
+| `src/app/page.tsx` | Done | Client component rendering full-viewport map via MapWrapper |
+| `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with DivIcon inline SVG, altitude-based coloring, track rotation, popup with details |
+| `src/components/Map.tsx` | Done | Client component with `MapContainer`, `TileLayer`, renders `AircraftMarker` for each positioned aircraft |
+| `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
 | `src/hooks/` | Empty | useAircraftData polling hook not yet created |
 
 ## Commands
@@ -101,6 +104,20 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 - Use `react-leaflet` v4 components: `MapContainer`, `TileLayer`, `Marker`, `Popup`
 - Leaflet CSS must be imported: `import 'leaflet/dist/leaflet.css'`
 - Custom plane icon using Leaflet's `DivIcon` with inline SVG rotated by the aircraft's `track` heading
+
+### Map Components (src/components/)
+
+- **AircraftMarker.tsx** — `React.memo`'d client component receiving `AircraftState` + `onClick` callback
+  - Returns `null` if `hasPosition()` is false
+  - Uses `L.DivIcon` with inline SVG from `public/icons/aircraft.svg` markup
+  - SVG rotated by `aircraft.track` degrees via CSS `transform: rotate()`
+  - Icon size 24x24, anchor 12x12 (centered)
+  - Altitude-based coloring: green (`#22c55e`) for ground, blue (`#3b82f6`) for < 10,000 ft, red (`#ef4444`) for >= 10,000 ft
+  - Popup displays: formatted callsign, type code, registration, altitude, speed
+- **Map.tsx** — `"use client"` component importing Leaflet CSS, renders `MapContainer` + `TileLayer` + `AircraftMarker` per positioned aircraft (keyed by `hex`)
+  - Map center/zoom read from env vars with defaults (38.9, -77.0, zoom 5)
+- **MapWrapper.tsx** — uses `next/dynamic` to import `Map` with `{ ssr: false }`, shows "Loading map..." placeholder
+  - This is what `page.tsx` renders — never import `Map.tsx` directly from a server component
 
 ### Polling
 

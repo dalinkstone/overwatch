@@ -91,11 +91,12 @@ overwatch/
 │   │       └── aircraft/
 │   │           └── route.ts     # Proxy to ADSB.lol
 │   ├── components/
-│   │   ├── Map.tsx              # Leaflet map (dynamic import, no SSR)
-│   │   ├── AircraftMarker.tsx   # Individual plane marker
-│   │   ├── AircraftPanel.tsx    # Detail sidebar/panel
-│   │   ├── FilterBar.tsx        # Type/altitude/callsign filters
-│   │   └── StatusBar.tsx        # Connection status + aircraft count
+│   │   ├── Map.tsx              # Leaflet map (client component, no SSR)
+│   │   ├── MapWrapper.tsx       # Dynamic import wrapper for Map (ssr: false)
+│   │   ├── AircraftMarker.tsx   # Individual plane marker (React.memo'd)
+│   │   ├── AircraftPanel.tsx    # Detail sidebar/panel (planned)
+│   │   ├── FilterBar.tsx        # Type/altitude/callsign filters (planned)
+│   │   └── StatusBar.tsx        # Connection status + aircraft count (planned)
 │   ├── hooks/
 │   │   └── useAircraftData.ts   # Polling hook
 │   ├── lib/

@@ -1,7 +1,20 @@
+"use client";
+
+import { useCallback, useState } from "react";
+import { MapWrapper } from "@/components/MapWrapper";
+import { AircraftState } from "@/lib/types";
+
 export default function Home() {
+  const [aircraft] = useState<AircraftState[]>([]);
+  const [selectedAircraft, setSelectedAircraft] = useState<AircraftState | null>(null);
+
+  const handleAircraftClick = useCallback((ac: AircraftState) => {
+    setSelectedAircraft(ac);
+  }, []);
+
   return (
-    <main className="flex min-h-screen items-center justify-center">
-      <h1 className="text-4xl font-bold">Overwatch</h1>
+    <main className="h-screen w-screen">
+      <MapWrapper aircraft={aircraft} onAircraftClick={handleAircraftClick} />
     </main>
   );
 }
