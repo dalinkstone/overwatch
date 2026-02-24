@@ -5,6 +5,8 @@ interface FilterBarProps {
   onSearchChange: (query: string) => void;
   altitudeFilter: string;
   onAltitudeFilterChange: (filter: string) => void;
+  categoryFilter: string;
+  onCategoryFilterChange: (filter: string) => void;
   filteredCount: number;
   totalCount: number;
 }
@@ -14,6 +16,8 @@ export const FilterBar = ({
   onSearchChange,
   altitudeFilter,
   onAltitudeFilterChange,
+  categoryFilter,
+  onCategoryFilterChange,
   filteredCount,
   totalCount,
 }: FilterBarProps) => {
@@ -69,6 +73,23 @@ export const FilterBar = ({
         <option value="below10000">Below 10,000 ft</option>
         <option value="10000-30000">10,000 – 30,000 ft</option>
         <option value="above30000">Above 30,000 ft</option>
+      </select>
+
+      {/* Category filter */}
+      <select
+        value={categoryFilter}
+        onChange={(e) => onCategoryFilterChange(e.target.value)}
+        className="h-7 rounded bg-zinc-900 px-2 text-xs text-white outline-none ring-1 ring-zinc-700 transition-colors focus:ring-amber-500/50 cursor-pointer"
+      >
+        <option value="all">All types</option>
+        <option value="fighter">Fighter</option>
+        <option value="tanker-transport">Tanker/Transport</option>
+        <option value="helicopter">Helicopter</option>
+        <option value="surveillance">Surveillance</option>
+        <option value="trainer">Trainer</option>
+        <option value="bomber">Bomber</option>
+        <option value="uav">UAV</option>
+        <option value="unknown">Unknown</option>
       </select>
 
       {/* Aircraft count */}

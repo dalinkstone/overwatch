@@ -7,6 +7,7 @@ import { FilterBar } from "@/components/FilterBar";
 import { AircraftPanel } from "@/components/AircraftPanel";
 import { useAircraftData } from "@/hooks/useAircraftData";
 import { AircraftState } from "@/lib/types";
+import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 
 const matchesSearch = (ac: AircraftState, query: string): boolean => {
   const q = query.toLowerCase();
@@ -38,6 +39,11 @@ const matchesAltitude = (ac: AircraftState, filter: string): boolean => {
   return true;
 };
 
+const matchesCategory = (ac: AircraftState, filter: string): boolean => {
+  if (filter === "all") return true;
+  return getAircraftCategory(ac.t) === (filter as AircraftCategory);
+};
+
 export default function Home() {
   const { aircraft, error, lastUpdated, totalCount } = useAircraftData();
   const [selectedAircraft, setSelectedAircraft] =
@@ -47,6 +53,7 @@ export default function Home() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [altitudeFilter, setAltitudeFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   const filteredAircraft = useMemo(() => {
     let result = aircraft;
@@ -59,8 +66,12 @@ export default function Home() {
       result = result.filter((ac) => matchesAltitude(ac, altitudeFilter));
     }
 
+    if (categoryFilter !== "all") {
+      result = result.filter((ac) => matchesCategory(ac, categoryFilter));
+    }
+
     return result;
-  }, [aircraft, searchQuery, altitudeFilter]);
+  }, [aircraft, searchQuery, altitudeFilter, categoryFilter]);
 
   const handleAircraftClick = useCallback((ac: AircraftState) => {
     setSelectedAircraft(ac);
@@ -101,6 +112,8 @@ export default function Home() {
         onSearchChange={setSearchQuery}
         altitudeFilter={altitudeFilter}
         onAltitudeFilterChange={setAltitudeFilter}
+        categoryFilter={categoryFilter}
+        onCategoryFilterChange={setCategoryFilter}
         filteredCount={filteredAircraft.length}
         totalCount={aircraft.length}
       />
