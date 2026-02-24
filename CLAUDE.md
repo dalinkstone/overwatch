@@ -17,6 +17,7 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 - **Phase 8 (Aircraft Icons):** Complete — AircraftCategory type system, ICAO type code mapping, category-specific SVG silhouettes, icon size rules, AircraftMarker + AircraftPanel integration
 - **Phase 9 (Filter Bar):** Complete — search by callsign/reg/hex/type, altitude band filter, category filter, aircraft count display
 - **Phase 10 (Polish):** Complete — loading/error/empty states, favicon, page metadata, ADSB.lol attribution, responsive mobile layout, ESLint flat config migration
+- **Phase 12 (Maritime Vessel Tracking):** Complete — AIS vessel layer via Finnish Digitraffic API, VesselMarker with ship silhouette icons, vessel proxy route, useVesselData polling hook, layer toggle in FilterBar, localStorage-persisted layer state
 
 ### What's Implemented
 
@@ -28,31 +29,33 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 | `src/app/api/aircraft/route.ts` | Done | Proxies to ADSB.lol `/v2/mil` with 15s timeout, cache headers, structured 502 errors |
 | `src/app/layout.tsx` | Done | Root layout with metadata ("Overwatch — Military Movement Tracker"), favicon, globals.css import |
 | `src/app/icon.svg` | Done | SVG favicon — amber aircraft silhouette on dark background |
-| `src/app/page.tsx` | Done | Client component with useAircraftData, StatusBar, FilterBar, MapWrapper, AircraftPanel, loading/error/empty overlays |
+| `src/app/page.tsx` | Done | Client component with useAircraftData, useVesselData, StatusBar, FilterBar, MapWrapper, AircraftPanel, vessel layer toggle, loading/error/empty overlays |
 | `src/lib/aircraftIcons.ts` | Done | `AircraftCategory` type, `AIRCRAFT_TYPE_MAP`, `getAircraftCategory()`, `ICON_SIZES`, `getAircraftIconSvg()`, `getCategoryLabel()` |
 | `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with category-specific DivIcon SVG silhouettes, altitude-based coloring, track rotation, popup with category badge |
-| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders `AircraftMarker` for each positioned aircraft, includes ADSB.lol attribution |
+| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders `AircraftMarker` + `VesselMarker` for each positioned entity, includes ADSB.lol attribution |
 | `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
 | `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel — right sidebar on desktop, bottom sheet on mobile (<768px), signal lost indicator, category badge |
 | `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, last updated time, connection status with colored indicator |
 | `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by hasPosition, preserves data on failure |
-| `src/components/FilterBar.tsx` | Done | Search (callsign/reg/hex/type), altitude band filter, category filter, aircraft count — responsive (full-width search on mobile) |
+| `src/components/FilterBar.tsx` | Done | Search (callsign/reg/hex/type), altitude band filter, category filter, aircraft count, vessel layer toggle — responsive (full-width search on mobile) |
 | `eslint.config.mjs` | Done | ESLint 10 flat config with `@eslint/js` + `typescript-eslint` |
+| `src/lib/maritimeTypes.ts` | Done | `VesselState`, `VesselResponse` interfaces; `hasVesselPosition`, `isMilitaryVessel` guards |
+| `src/lib/vesselApi.ts` | Done | `fetchVessels` — fetches from local proxy with validation |
+| `src/app/api/vessels/route.ts` | Done | Proxies to Digitraffic AIS API, merges location + vessel metadata, 15s timeout, cache headers |
+| `src/components/VesselMarker.tsx` | Done | `React.memo`'d marker with ship silhouette DivIcon, heading/cog rotation, cyan color, popup with vessel details |
+| `src/hooks/useVesselData.ts` | Done | Polls `/api/vessels` every 30s when enabled, filters by `isMilitaryVessel` + `hasVesselPosition` |
 
 ### What's Planned
 
 | File | Status | Description |
 |---|---|---|
-| `src/lib/maritimeTypes.ts` | Planned | Vessel type interfaces and classification |
 | `src/lib/dataLayers.ts` | Planned | Unified data layer toggle system |
-| `src/app/api/vessels/route.ts` | Planned | Maritime AIS proxy route |
 | `src/app/api/satellites/route.ts` | Planned | Satellite TLE/position proxy route |
 | `src/app/api/conflicts/route.ts` | Planned | Conflict event data proxy route |
 | `src/app/api/notams/route.ts` | Planned | NOTAM/TFR proxy route |
-| `src/components/VesselMarker.tsx` | Planned | Ship marker component |
 | `src/components/SatelliteMarker.tsx` | Planned | Satellite orbit/position marker |
 | `src/components/ConflictMarker.tsx` | Planned | Conflict event marker |
-| `src/components/LayerControl.tsx` | Planned | Data layer toggle panel |
+| `src/components/LayerControl.tsx` | Planned | Data layer toggle panel (currently a simple button in FilterBar) |
 
 ## Commands
 
@@ -181,11 +184,19 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
   - Icon size varies by category (see Icon Size Rules above)
   - Altitude-based coloring: green (`#22c55e`) for ground, blue (`#3b82f6`) for < 10,000 ft, red (`#ef4444`) for >= 10,000 ft
   - Popup displays: formatted callsign, type code, registration, altitude, speed, category badge
-- **Map.tsx** — `"use client"` component importing Leaflet CSS, creates map via `L.map` + `L.tileLayer`, renders `AircraftMarker` per positioned aircraft (keyed by `hex`)
+- **VesselMarker.tsx** — `React.memo`'d client component receiving `VesselState` + `map`
+  - Uses `L.DivIcon` with inline SVG ship silhouette (top-down, pointed bow)
+  - SVG rotated by `vessel.heading` (falls back to `vessel.cog`, then 0)
+  - Cyan color (`#06b6d4`) for all vessels — distinct from aircraft color scheme
+  - Icon size: 28x36, anchor: 14x18
+  - Popup displays: vessel name, MMSI, type code, speed, destination, callsign
+- **Map.tsx** — `"use client"` component importing Leaflet CSS, creates map via `L.map` + `L.tileLayer`, renders `AircraftMarker` per positioned aircraft (keyed by `hex`) and `VesselMarker` per positioned vessel (keyed by `mmsi`)
   - Map center/zoom read from env vars with defaults (38.9, -77.0, zoom 5)
   - Attribution includes both OpenStreetMap and ADSB.lol
+  - Accepts optional `vessels` prop — aircraft markers and vessel markers rendered independently
 - **MapWrapper.tsx** — uses `next/dynamic` to import `Map` with `{ ssr: false }`, shows "Loading map..." placeholder
   - This is what `page.tsx` renders — never import `Map.tsx` directly from a server component
+  - Passes optional `vessels` prop through to Map
 
 ### Polling Hook (src/hooks/useAircraftData.ts)
 
@@ -196,6 +207,47 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 - On success: replaces full aircraft state, updates `totalCount` from `response.total`, sets `lastUpdated`, clears error
 - On failure: sets error message string, preserves previous aircraft data on map, continues polling
 - Cleanup: clears interval on unmount
+
+### Digitraffic AIS API
+
+- Base URL: `https://meri.digitraffic.fi`
+- Locations endpoint: `GET /api/ais/v1/locations` — returns GeoJSON FeatureCollection with vessel positions
+- Vessels endpoint: `GET /api/ais/v1/vessels` — returns array of vessel metadata (names, types, destinations)
+- No auth required. Rate limit: 60 requests/minute per IP (higher with `Digitraffic-User` header)
+- Geographic coverage: Baltic Sea region (Gulf of Finland, Gulf of Bothnia, Northern Baltic)
+- Required headers: `Accept-Encoding: gzip`, `Digitraffic-User: Overwatch/1.0`
+- AIS heading value 511 means "not available" — treated as undefined
+- GeoJSON coordinates are `[longitude, latitude]` (standard GeoJSON order, reversed from `[lat, lon]`)
+- Military vessel identification: vesselType 35 (military ops), vesselType 55 (law enforcement), MMSI prefix 338-369 (US-flagged)
+
+### Maritime Types (src/lib/maritimeTypes.ts)
+
+- `VesselState` — interface for a single vessel with MMSI, position, course/speed, vessel type, name, destination, callsign
+- `VesselResponse` — interface for the proxy response containing `vessels[]`, `total`, `dataUpdatedTime`
+- `hasVesselPosition(vessel)` — returns `true` only when both `lat` and `lon` are defined numbers
+- `isMilitaryVessel(vessel)` — returns `true` when vesselType is 35 or 55, or MMSI prefix is in 338-369 range
+
+### Vessel API Client (src/lib/vesselApi.ts)
+
+- `fetchVessels()` — fetches from `/api/vessels` (local proxy), validates the response shape, throws on HTTP errors or malformed data
+
+### Vessel API Proxy Route (src/app/api/vessels/route.ts)
+
+- Exports an async `GET` handler using Next.js App Router route handler conventions
+- Reads upstream base URL from `process.env.AIS_BASE_URL`, defaulting to `"https://meri.digitraffic.fi"`
+- Fetches both `/api/ais/v1/locations` and `/api/ais/v1/vessels` in parallel with a shared 15-second timeout
+- Merges location data (positions) with vessel metadata (names, types) by MMSI
+- On success: returns merged JSON with `Cache-Control: public, s-maxage=10, stale-while-revalidate=20`
+- If vessel metadata fetch fails, still returns location data without enrichment
+- On fetch error (network/timeout): returns 502 with structured error
+
+### Vessel Polling Hook (src/hooks/useVesselData.ts)
+
+- `useVesselData(enabled: boolean)` — custom hook that polls `/api/vessels` every 30 seconds when enabled
+- Returns `{ vessels, loading, error, lastUpdated, totalCount }`
+- `vessels` is pre-filtered to only include military vessels with valid positions (via `isMilitaryVessel` + `hasVesselPosition`)
+- When `enabled` is false: clears polling interval, resets vessel state, stops all network requests
+- Polling interval configurable via `NEXT_PUBLIC_VESSEL_POLL_INTERVAL_MS` env var (default 30000)
 
 ### StatusBar (src/components/StatusBar.tsx)
 
@@ -221,6 +273,7 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 - **Search:** text input matching callsign, registration, hex, or type code (case-insensitive)
 - **Altitude filter:** All / Ground / Below 10k / 10k-30k / Above 30k
 - **Category filter:** All / Fighter / Tanker-Transport / Helicopter / Surveillance / Trainer / Bomber / UAV / Unknown
+- **Vessel layer toggle:** Styled button that toggles vessel layer on/off, shows vessel count when active. Cyan color scheme when active, muted when inactive
 - **Count display:** "Showing X of Y military aircraft" (hidden on mobile)
 - **Responsive:** search input full-width on mobile (<768px), dropdowns flex to fill row
 
@@ -232,6 +285,14 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 - If the selected aircraft disappears from the data, keeps showing last known state with "Signal lost" indicator
 - Close handler clears selection and resets signal lost state
 
+### Vessel Layer Toggle (src/app/page.tsx)
+
+- `vesselLayerEnabled` state controls whether vessel data is fetched and displayed (default: false)
+- State persisted to `localStorage` key `"layer_vessels"` — survives page reloads
+- When disabled: `useVesselData` stops polling, clears vessel state, no vessel markers rendered
+- When enabled: `useVesselData` starts polling every 30s, vessel markers appear on map
+- Toggle button in FilterBar shows vessel count when active
+
 ### Loading / Error / Empty States (src/app/page.tsx)
 
 - **Loading:** Semi-transparent dark overlay with spinning icon + "Loading aircraft data..." (shown while initial fetch is in progress)
@@ -242,21 +303,21 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 
 ## Additional Data Layers (Planned)
 
-### Layer 1: Maritime Vessel Tracking (AIS)
+### Layer 1: Maritime Vessel Tracking (AIS) — IMPLEMENTED (Phase 12)
 
-**Data Source Options (all free, no API key):**
+**Data Source:** Finnish Digitraffic Marine AIS API (free, no auth, REST JSON)
 
 | Source | URL | Auth | Notes |
 |---|---|---|---|
-| AISHub | `http://data.aishub.net/ws.php` | Free registration | Community AIS aggregator, returns JSON |
-| MarineTraffic | `https://www.marinetraffic.com/en/ais/details/` | Scrape only | No free API, but position data is public |
-| US Coast Guard NAIS | `https://marinecadastre.gov/ais/` | None | Historical data, updated monthly |
-| NOAA AIS | `https://coast.noaa.gov/htdata/CMSP/AISDataHandler/` | None | Historical/bulk data |
-| **mAIS (recommended)** | `https://mais.herokuapp.com/` | None | Free, JSON, real-time |
+| **Digitraffic (active)** | `https://meri.digitraffic.fi` | None | Free, GeoJSON, real-time, Baltic coverage |
+| AISHub | `http://data.aishub.net/ws.php` | Free registration | Community AIS aggregator, requires data sharing |
+| aisstream.io | `wss://stream.aisstream.io` | Free API key | Global coverage, WebSocket only |
 
-**Implementation:** Same proxy pattern as aircraft. New route at `src/app/api/vessels/route.ts`. Separate polling hook `useVesselData`. Vessel markers rendered as ship silhouettes with heading rotation. Filter for military vessel types (MMSI ranges, vessel type codes).
+**Implementation:** Same proxy pattern as aircraft. Route at `src/app/api/vessels/route.ts` fetches both locations and vessel metadata endpoints in parallel, merges by MMSI. Polling hook `useVesselData` polls every 30s when enabled. Vessel markers rendered as cyan ship silhouettes with heading rotation. Layer toggle in FilterBar persists to localStorage.
 
-**Military vessel identification:** MMSI numbers starting with specific MID (Maritime Identification Digits) ranges can indicate navy vessels. US Navy vessels typically use MMSI range 338-369. Vessel type codes 35 (military ops) and 55 (law enforcement) are also indicators.
+**Coverage:** Baltic Sea region (Gulf of Finland, Gulf of Bothnia, Northern Baltic). For global coverage, a different AIS data source would be needed (e.g., aisstream.io with API key).
+
+**Military vessel identification:** MMSI numbers starting with MID range 338-369 (US-flagged). Vessel type codes 35 (military ops) and 55 (law enforcement).
 
 ### Layer 2: Satellite Tracking
 

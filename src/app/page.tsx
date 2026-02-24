@@ -6,6 +6,7 @@ import { StatusBar } from "@/components/StatusBar";
 import { FilterBar } from "@/components/FilterBar";
 import { AircraftPanel } from "@/components/AircraftPanel";
 import { useAircraftData } from "@/hooks/useAircraftData";
+import { useVesselData } from "@/hooks/useVesselData";
 import { AircraftState } from "@/lib/types";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 
@@ -54,6 +55,18 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [altitudeFilter, setAltitudeFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+
+  // Vessel layer state — persisted to localStorage
+  const [vesselLayerEnabled, setVesselLayerEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("layer_vessels") === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("layer_vessels", String(vesselLayerEnabled));
+  }, [vesselLayerEnabled]);
+
+  const { vessels } = useVesselData(vesselLayerEnabled);
 
   const filteredAircraft = useMemo(() => {
     let result = aircraft;
@@ -116,6 +129,9 @@ export default function Home() {
         onCategoryFilterChange={setCategoryFilter}
         filteredCount={filteredAircraft.length}
         totalCount={aircraft.length}
+        vesselLayerEnabled={vesselLayerEnabled}
+        onVesselLayerToggle={setVesselLayerEnabled}
+        vesselCount={vessels.length}
       />
       {/* Error banner — non-blocking, shows below filter bar */}
       {error && !loading && (
@@ -135,6 +151,7 @@ export default function Home() {
         <MapWrapper
           aircraft={filteredAircraft}
           onAircraftClick={handleAircraftClick}
+          vessels={vesselLayerEnabled ? vessels : undefined}
         />
         {/* Loading overlay */}
         {loading && (

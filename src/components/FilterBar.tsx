@@ -9,6 +9,9 @@ interface FilterBarProps {
   onCategoryFilterChange: (filter: string) => void;
   filteredCount: number;
   totalCount: number;
+  vesselLayerEnabled: boolean;
+  onVesselLayerToggle: (enabled: boolean) => void;
+  vesselCount: number;
 }
 
 export const FilterBar = ({
@@ -20,6 +23,9 @@ export const FilterBar = ({
   onCategoryFilterChange,
   filteredCount,
   totalCount,
+  vesselLayerEnabled,
+  onVesselLayerToggle,
+  vesselCount,
 }: FilterBarProps) => {
   return (
     <div className="flex flex-wrap items-center gap-2 bg-zinc-800 px-3 py-2 text-xs text-white border-t border-zinc-700/50 md:gap-3 md:px-4">
@@ -91,6 +97,20 @@ export const FilterBar = ({
         <option value="uav">UAV</option>
         <option value="unknown">Unknown</option>
       </select>
+
+      {/* Layer toggles */}
+      <div className="flex items-center gap-1.5 border-l border-zinc-700/50 pl-2 md:pl-3">
+        <button
+          onClick={() => onVesselLayerToggle(!vesselLayerEnabled)}
+          className={`h-7 rounded px-2.5 text-xs font-medium transition-colors ${
+            vesselLayerEnabled
+              ? "bg-cyan-900/50 text-cyan-300 ring-1 ring-cyan-700"
+              : "bg-zinc-900 text-zinc-500 ring-1 ring-zinc-700 hover:text-zinc-300"
+          }`}
+        >
+          Vessels{vesselLayerEnabled && vesselCount > 0 ? ` (${vesselCount})` : ""}
+        </button>
+      </div>
 
       {/* Aircraft count */}
       <div className="hidden text-zinc-400 md:ml-auto md:block">

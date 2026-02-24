@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { AircraftState } from "@/lib/types";
+import { VesselState } from "@/lib/maritimeTypes";
 
 const Map = dynamic(() => import("./Map"), {
   ssr: false,
@@ -15,10 +16,11 @@ const Map = dynamic(() => import("./Map"), {
 interface MapWrapperProps {
   aircraft: AircraftState[];
   onAircraftClick: (aircraft: AircraftState) => void;
+  vessels?: VesselState[];
 }
 
-export const MapWrapper = ({ aircraft, onAircraftClick }: MapWrapperProps) => {
+export const MapWrapper = ({ aircraft, onAircraftClick, vessels }: MapWrapperProps) => {
   return (
-    <Map aircraft={aircraft} onAircraftClick={onAircraftClick} />
+    <Map aircraft={aircraft} onAircraftClick={onAircraftClick} vessels={vessels} />
   );
 };
