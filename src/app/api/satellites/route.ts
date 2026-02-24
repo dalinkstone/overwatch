@@ -10,14 +10,52 @@ const CELESTRAK_BASE =
   "https://celestrak.org/NORAD/elements/gp.php?FORMAT=json&GROUP=";
 
 const CATALOG_GROUPS = [
-  "military",    // ~100 — Miscellaneous military satellites
-  "gps-ops",     // ~31  — US GPS constellation
-  "glonass",     // ~24  — Russian GLONASS navigation
-  "beidou",      // ~50+ — Chinese BeiDou navigation
-  "galileo",     // ~30  — European Galileo navigation
-  "geo",         // ~500 — Active geosynchronous (includes comms, SIGINT, early-warning)
-  "weather",     // ~50  — Weather satellites (includes military DMSP)
+  "military",    // ~54  — Misc military (recon, SIGINT, classified)
+  "gps-ops",     // ~31  — US GPS constellation (US Space Force)
+  "glo-ops",     // ~24  — Russian GLONASS (Russian military)
+  "beidou",      // ~50+ — Chinese BeiDou (PLA Strategic Support Force)
+  "galileo",     // ~30  — EU Galileo navigation
+  "sbas",        // ~15  — Satellite-Based Augmentation Systems
+  "nnss",        // ~10  — US Navy Navigation Satellite System
+  "musson",      // ~5   — Russian LEO Navigation
+  "tdrss",       // ~10  — Tracking & Data Relay Satellite System
+  "geo",         // ~600+ — Active geosynchronous (filtered to military-relevant)
 ] as const;
+
+/**
+ * Known military satellite name patterns for filtering the large GEO catalog.
+ * Only satellites matching these patterns are kept from the geo group.
+ */
+const GEO_MILITARY_PATTERNS: RegExp[] = [
+  /\bUSA\s+\d+/i,                      // US classified (USA followed by space + digits)
+  /\bMUOS\b/i,                          // Mobile User Objective System (Navy UHF)
+  /\bAEHF\b/i,                          // Advanced Extremely High Frequency
+  /\bMILSTAR\b/i,                       // Military Strategic & Tactical Relay
+  /\bWGS\b/i,                           // Wideband Global SATCOM
+  /\bDSCS\b/i,                          // Defense Satellite Communications System
+  /\bUFO\b/i,                           // UHF Follow-On
+  /\bSBIRS\b/i,                         // Space Based Infrared System
+  /\bDSP\b/i,                           // Defense Support Program
+  /\bSTSS\b/i,                          // Space Tracking and Surveillance System
+  /\bSDS\b/i,                           // Satellite Data System
+  /\bTDRS\b/i,                          // Tracking & Data Relay Satellite
+  /\bDMSP\b/i,                          // Defense Meteorological Satellite Program
+  /\bNROL\b/i,                          // National Reconnaissance Office Launch
+  /\bCOSMOS\b/i,                        // Russian military
+  /\bBEIDOU\b/i,                        // Chinese BeiDou (GEO component)
+  /\bYAOGAN\b/i,                        // Chinese remote sensing / military recon
+  /\bSHIYAN\b/i,                        // Chinese experimental military
+  /\bSHIJIAN\b/i,                       // Chinese experimental / military
+  /\bMERIDIAN\b/i,                      // Russian military comms (Molniya-type)
+  /\bLUCH\b/i,                          // Russian data relay
+  /\bTUNDRA\b/i,                        // Russian early warning (EKS)
+  /\bGARPUN\b/i,                        // Russian military comms (GEO)
+  /\bREPEI\b/i,                         // Russian military relay
+];
+
+/** Check if a GEO satellite name matches known military patterns. */
+const isGeoMilitary = (name: string): boolean =>
+  GEO_MILITARY_PATTERNS.some((pattern) => pattern.test(name));
 
 const FETCH_TIMEOUT_MS = 30_000;
 
@@ -103,7 +141,11 @@ export async function GET() {
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
     if (result.status === "fulfilled") {
-      const validated = (result.value as unknown[]).filter(isValidOMM);
+      let validated = (result.value as unknown[]).filter(isValidOMM);
+      // Filter the large GEO catalog to only military-relevant satellites
+      if (CATALOG_GROUPS[i] === "geo") {
+        validated = validated.filter((sat) => isGeoMilitary(sat.OBJECT_NAME));
+      }
       validatedCatalogs.push(validated);
       successCount++;
     } else {

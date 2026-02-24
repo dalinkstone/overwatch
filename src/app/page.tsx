@@ -379,7 +379,7 @@ export default function Home() {
   }, [satellites]);
 
   return (
-    <main className="relative flex h-screen w-screen flex-col">
+    <main className="relative flex h-screen w-full flex-col overflow-hidden">
       <StatusBar
         totalCount={totalCount}
         positionCount={aircraft.length}
@@ -446,7 +446,7 @@ export default function Home() {
           )}
         </div>
       )}
-      <div className="relative flex-1">
+      <div className="relative flex-1 overflow-hidden">
         <MapWrapper
           aircraft={filteredAircraft}
           onAircraftClick={handleAircraftClick}

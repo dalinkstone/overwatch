@@ -50,6 +50,7 @@ export type SatelliteCategory =
   | 'navigation'
   | 'early-warning'
   | 'weather'
+  | 'foreign-military'
   | 'other-military';
 
 /** Display colors for each satellite category. */
@@ -60,6 +61,7 @@ export const SATELLITE_COLORS: Record<SatelliteCategory, string> = {
   navigation: '#22c55e',
   'early-warning': '#eab308',
   weather: '#06b6d4',
+  'foreign-military': '#8b5cf6',
   'other-military': '#a855f7',
 };
 
@@ -71,6 +73,7 @@ export const SATELLITE_CATEGORY_LABELS: Record<SatelliteCategory, string> = {
   navigation: 'Navigation (GPS)',
   'early-warning': 'Early Warning',
   weather: 'Weather',
+  'foreign-military': 'Foreign Military',
   'other-military': 'Other Military',
 };
 
@@ -184,6 +187,8 @@ const NORAD_ID_CATEGORIES: ReadonlyMap<number, SatelliteCategory> = new Map<numb
  * Classify a satellite into a category.
  * 1. Check NORAD ID lookup (highest confidence — known military satellites)
  * 2. Fall back to name pattern matching (case-insensitive)
+ * 3. Foreign military patterns (COSMOS, YAOGAN, SHIYAN, SHIJIAN not caught above)
+ * 4. Default to other-military
  */
 export const getSatelliteCategory = (name: string, noradId: number): SatelliteCategory => {
   // NORAD ID lookup — definitive classification for known satellites
@@ -192,21 +197,23 @@ export const getSatelliteCategory = (name: string, noradId: number): SatelliteCa
 
   const upper = name.toUpperCase();
 
-  // Navigation — GPS, GLONASS, BeiDou, Galileo
+  // Navigation — GPS, GLONASS, BeiDou, Galileo, SBAS, NNSS
   if (upper.includes('NAVSTAR') || /\bGPS\b/.test(upper)) return 'navigation';
-  if (upper.includes('GLONASS') || upper.includes('COSMOS') && /\b(2\d{3})\b/.test(upper)) return 'navigation';
+  if (upper.includes('GLONASS')) return 'navigation';
   if (upper.includes('BEIDOU') || upper.includes('COMPASS')) return 'navigation';
   if (upper.includes('GALILEO') || upper.includes('GSAT')) return 'navigation';
+  // COSMOS 2xxx in NORAD 24000-24999 range are older GLONASS satellites
+  if (upper.includes('COSMOS') && (noradId >= 24000 && noradId <= 24999)) return 'navigation';
 
   // Communications — name patterns
-  const commsPatterns = ['MUOS', 'AEHF', 'MILSTAR', 'DSCS', 'WGS', 'FLTSATCOM', 'TDRS', 'SICRAL', 'SKYNET', 'SYRACUSE'];
+  const commsPatterns = ['MUOS', 'AEHF', 'MILSTAR', 'DSCS', 'WGS', 'FLTSATCOM', 'TDRS', 'SICRAL', 'SKYNET', 'SYRACUSE', 'MERIDIAN', 'LUCH', 'GARPUN'];
   for (const pattern of commsPatterns) {
     if (upper.includes(pattern)) return 'communications';
   }
   if (/\bUFO\b/.test(upper) || /\bSDS\b/.test(upper)) return 'communications';
 
   // Early warning — name patterns
-  if (upper.includes('SBIRS') || /\bDSP\b/.test(upper) || upper.includes('STSS')) return 'early-warning';
+  if (upper.includes('SBIRS') || /\bDSP\b/.test(upper) || upper.includes('STSS') || upper.includes('TUNDRA')) return 'early-warning';
 
   // Weather — military and civilian patterns
   if (upper.includes('DMSP') || upper.includes('METEOSAT') || upper.includes('GOES ')
@@ -220,11 +227,14 @@ export const getSatelliteCategory = (name: string, noradId: number): SatelliteCa
     if (upper.includes(pattern)) return 'sigint';
   }
 
-  // Reconnaissance — codenames
-  const reconPatterns = ['LACROSSE', 'ONYX', 'TOPAZ', 'MISTY', 'CRYSTAL', 'NROL'];
+  // Reconnaissance — codenames and Chinese military recon
+  const reconPatterns = ['LACROSSE', 'ONYX', 'TOPAZ', 'MISTY', 'CRYSTAL', 'NROL', 'YAOGAN'];
   for (const pattern of reconPatterns) {
     if (upper.includes(pattern)) return 'reconnaissance';
   }
+
+  // Foreign military — COSMOS (non-navigation), Chinese experimental/military
+  if (upper.includes('COSMOS') || upper.includes('SHIYAN') || upper.includes('SHIJIAN')) return 'foreign-military';
 
   return 'other-military';
 };
