@@ -174,14 +174,14 @@ export const LayerControl = ({
           className="h-2 w-2 rounded-full shrink-0"
           style={{
             backgroundColor: satelliteEnabled
-              ? satelliteCount > 0
+              ? (satelliteTotalCount ?? satelliteCount) > 0
                 ? "#22c55e"
                 : "#eab308"
               : "#6b7280",
           }}
           title={
             satelliteEnabled
-              ? satelliteCount > 0
+              ? (satelliteTotalCount ?? satelliteCount) > 0
                 ? "Data loaded"
                 : "Loading..."
               : "Off"

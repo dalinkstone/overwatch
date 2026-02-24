@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
 import type { SatelliteOMM } from "@/lib/satelliteTypes";
 
-const CELESTRAK_MILITARY =
-  "https://celestrak.org/NORAD/elements/gp.php?GROUP=military&FORMAT=json";
-const CELESTRAK_GPS =
-  "https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=json";
+/**
+ * CelesTrak catalog groups to fetch.
+ * Each group is fetched in parallel; results are merged and deduplicated by NORAD_CAT_ID.
+ * Military catalog entries take priority on duplicates.
+ */
+const CELESTRAK_BASE =
+  "https://celestrak.org/NORAD/elements/gp.php?FORMAT=json&GROUP=";
+
+const CATALOG_GROUPS = [
+  "military",    // ~100 — Miscellaneous military satellites
+  "gps-ops",     // ~31  — US GPS constellation
+  "glonass",     // ~24  — Russian GLONASS navigation
+  "beidou",      // ~50+ — Chinese BeiDou navigation
+  "galileo",     // ~30  — European Galileo navigation
+  "geo",         // ~500 — Active geosynchronous (includes comms, SIGINT, early-warning)
+  "weather",     // ~50  — Weather satellites (includes military DMSP)
+] as const;
+
 const FETCH_TIMEOUT_MS = 30_000;
 
 /** Fetch a CelesTrak endpoint with timeout. */
@@ -57,22 +71,19 @@ const isValidOMM = (record: unknown): record is SatelliteOMM => {
 };
 
 /**
- * Merge two OMM arrays, deduplicating by NORAD_CAT_ID.
- * Military catalog entries take priority over GPS entries.
+ * Merge multiple OMM arrays, deduplicating by NORAD_CAT_ID.
+ * Earlier arrays in the list take priority on duplicates (military first).
  */
 const mergeAndDeduplicate = (
-  military: SatelliteOMM[],
-  gps: SatelliteOMM[]
+  catalogs: SatelliteOMM[][]
 ): SatelliteOMM[] => {
   const seen = new Map<number, SatelliteOMM>();
 
-  // Military first — takes priority on duplicates
-  for (const sat of military) {
-    seen.set(sat.NORAD_CAT_ID, sat);
-  }
-  for (const sat of gps) {
-    if (!seen.has(sat.NORAD_CAT_ID)) {
-      seen.set(sat.NORAD_CAT_ID, sat);
+  for (const catalog of catalogs) {
+    for (const sat of catalog) {
+      if (!seen.has(sat.NORAD_CAT_ID)) {
+        seen.set(sat.NORAD_CAT_ID, sat);
+      }
     }
   }
 
@@ -80,44 +91,39 @@ const mergeAndDeduplicate = (
 };
 
 export async function GET() {
-  const [militaryResult, gpsResult] = await Promise.allSettled([
-    fetchCatalog(CELESTRAK_MILITARY),
-    fetchCatalog(CELESTRAK_GPS),
-  ]);
+  const results = await Promise.allSettled(
+    CATALOG_GROUPS.map((group) => fetchCatalog(`${CELESTRAK_BASE}${group}`))
+  );
 
-  const militaryOk = militaryResult.status === "fulfilled";
-  const gpsOk = gpsResult.status === "fulfilled";
+  // Collect successfully fetched and validated catalogs
+  const validatedCatalogs: SatelliteOMM[][] = [];
+  let successCount = 0;
+  const errors: string[] = [];
 
-  // Both failed
-  if (!militaryOk && !gpsOk) {
-    const militaryError =
-      militaryResult.status === "rejected"
-        ? String(militaryResult.reason)
-        : "unknown";
-    const gpsError =
-      gpsResult.status === "rejected"
-        ? String(gpsResult.reason)
-        : "unknown";
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === "fulfilled") {
+      const validated = (result.value as unknown[]).filter(isValidOMM);
+      validatedCatalogs.push(validated);
+      successCount++;
+    } else {
+      errors.push(`${CATALOG_GROUPS[i]}: ${String(result.reason)}`);
+    }
+  }
 
+  // All catalogs failed
+  if (successCount === 0) {
     return NextResponse.json(
       {
         error: "CelesTrak unavailable",
-        details: `Military: ${militaryError}; GPS: ${gpsError}`,
+        details: errors.join("; "),
       },
       { status: 502 }
     );
   }
 
-  // Validate and filter OMM records
-  const militaryData: SatelliteOMM[] = militaryOk
-    ? (militaryResult.value as unknown[]).filter(isValidOMM)
-    : [];
-  const gpsData: SatelliteOMM[] = gpsOk
-    ? (gpsResult.value as unknown[]).filter(isValidOMM)
-    : [];
-
-  const satellites = mergeAndDeduplicate(militaryData, gpsData);
-  const partial = !militaryOk || !gpsOk;
+  const satellites = mergeAndDeduplicate(validatedCatalogs);
+  const partial = successCount < CATALOG_GROUPS.length;
 
   return NextResponse.json(
     {
