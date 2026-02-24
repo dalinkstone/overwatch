@@ -70,14 +70,15 @@ Aircraft are rendered with type-specific silhouette icons based on their ICAO ty
 | `seen` | Seconds since last message |
 | `seen_pos` | Seconds since last position update |
 
-### Layer 2: Maritime Vessels via AIS (Planned)
+### Layer 2: Maritime Vessels via AIS (In Progress)
 
 **What is AIS?** The Automatic Identification System is the maritime equivalent of ADS-B. Ships broadcast their identity, position, course, and speed on VHF frequencies. Like ADS-B, this data is publicly receivable.
 
 | Source | URL | Auth | Status |
 |---|---|---|---|
-| AISHub | `http://data.aishub.net/ws.php` | Free registration | Candidate |
-| mAIS | `https://mais.herokuapp.com/` | None | Candidate |
+| aisstream.io | `wss://stream.aisstream.io/v0/stream` | Free API key | Active |
+
+**Data source:** aisstream.io provides global AIS vessel data via WebSocket with a free API key. The connection streams real-time position reports for vessels worldwide.
 
 **Military vessel identification:** US Navy vessels use MMSI numbers in the 338-369 range. Vessel type codes 35 (military ops) and 55 (law enforcement) are also indicators.
 
@@ -190,7 +191,18 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. No API keys needed. You should see a status bar, filter bar, and a map with military aircraft updating every 10 seconds, rendered with type-specific icons. Click any aircraft for details. Use the search and filters to narrow results. The app is responsive and works on mobile.
+Open `http://localhost:3000`. No API keys needed for aircraft tracking. You should see a status bar, filter bar, and a map with military aircraft updating every 10 seconds, rendered with type-specific icons. Click any aircraft for details. Use the search and filters to narrow results. The app is responsive and works on mobile.
+
+### Vessel Tracking Setup
+
+The vessel tracking layer requires a free API key from aisstream.io:
+
+1. Register at https://aisstream.io and copy your API key
+2. Copy the environment template: `cp .env.example .env.local`
+3. Open `.env.local` and set `AISSTREAM_API_KEY=your_key_here`
+4. Restart the dev server — the vessel layer toggle will become active
+
+Without an API key, the vessel layer toggle will appear disabled. All other features work normally.
 
 ## Environment Variables
 
@@ -201,6 +213,7 @@ Open `http://localhost:3000`. No API keys needed. You should see a status bar, f
 | `NEXT_PUBLIC_DEFAULT_LAT` | `38.9` | Default map center latitude |
 | `NEXT_PUBLIC_DEFAULT_LNG` | `-77.0` | Default map center longitude |
 | `NEXT_PUBLIC_DEFAULT_ZOOM` | `5` | Default map zoom level |
+| `AISSTREAM_API_KEY` | *(none)* | aisstream.io API key for vessel tracking (server-side only) |
 
 ## Legal
 

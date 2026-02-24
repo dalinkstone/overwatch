@@ -4,14 +4,11 @@ import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { AircraftState, hasPosition } from "@/lib/types";
-import { VesselState, hasVesselPosition } from "@/lib/maritimeTypes";
 import { AircraftMarker } from "./AircraftMarker";
-import { VesselMarker } from "./VesselMarker";
 
 interface MapProps {
   aircraft: AircraftState[];
   onAircraftClick: (aircraft: AircraftState) => void;
-  vessels?: VesselState[];
 }
 
 const DEFAULT_CENTER: [number, number] = [
@@ -23,7 +20,7 @@ const DEFAULT_ZOOM = parseInt(
   10
 );
 
-const Map = ({ aircraft, onAircraftClick, vessels = [] }: MapProps) => {
+const Map = ({ aircraft, onAircraftClick }: MapProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -60,15 +57,6 @@ const Map = ({ aircraft, onAircraftClick, vessels = [] }: MapProps) => {
             key={ac.hex}
             aircraft={ac}
             onClick={onAircraftClick}
-            map={mapRef.current!}
-          />
-        ))}
-      {mapReady &&
-        mapRef.current &&
-        vessels.filter(hasVesselPosition).map((v) => (
-          <VesselMarker
-            key={v.mmsi}
-            vessel={v}
             map={mapRef.current!}
           />
         ))}
