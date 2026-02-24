@@ -9,18 +9,22 @@ import { VesselPanel } from "@/components/VesselPanel";
 import { VesselFilterBar } from "@/components/VesselFilterBar";
 import { SatelliteFilterBar } from "@/components/SatelliteFilterBar";
 import { SatellitePanel } from "@/components/SatellitePanel";
+import { AirspaceFilterBar } from "@/components/AirspaceFilterBar";
 import { LayerControl } from "@/components/LayerControl";
 import { useAircraftData } from "@/hooks/useAircraftData";
 import { useVesselData } from "@/hooks/useVesselData";
 import { useSatelliteData } from "@/hooks/useSatelliteData";
+import { useAirspaceData } from "@/hooks/useAirspaceData";
 import { AircraftState } from "@/lib/types";
 import { VesselData, VesselCategory, getVesselCategory } from "@/lib/vesselTypes";
 import { SatellitePosition, SatelliteCategory } from "@/lib/satelliteTypes";
+import { AirspaceType, TfrType } from "@/lib/airspaceTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 import { getCountryFromHex } from "@/lib/countryLookup";
 
 const VESSEL_LAYER_KEY = "overwatch-vessel-layer";
 const SATELLITE_LAYER_KEY = "overwatch-satellite-layer";
+const AIRSPACE_LAYER_KEY = "overwatch-airspace-layer";
 
 const matchesSearch = (ac: AircraftState, query: string): boolean => {
   const q = query.toLowerCase();
@@ -100,6 +104,9 @@ export default function Home() {
   const [satelliteEnabled, setSatelliteEnabled] = useState(false);
   const { satellites, error: satelliteError } = useSatelliteData(satelliteEnabled);
 
+  const [airspaceEnabled, setAirspaceEnabled] = useState(false);
+  const { zones: airspaceActiveZones, allZones: airspaceAllZones } = useAirspaceData(airspaceEnabled);
+
   // Hydrate layer toggles from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
     try {
@@ -108,6 +115,9 @@ export default function Home() {
       }
       if (localStorage.getItem(SATELLITE_LAYER_KEY) === "true") {
         setSatelliteEnabled(true);
+      }
+      if (localStorage.getItem(AIRSPACE_LAYER_KEY) === "true") {
+        setAirspaceEnabled(true);
       }
     } catch {
       // localStorage unavailable
@@ -152,6 +162,20 @@ export default function Home() {
     });
   }, []);
 
+  const handleAirspaceToggle = useCallback((enabled: boolean) => {
+    setAirspaceEnabled(enabled);
+    try {
+      localStorage.setItem(AIRSPACE_LAYER_KEY, String(enabled));
+    } catch {
+      // localStorage unavailable
+    }
+    if (!enabled) {
+      setAirspaceTypeFilter("all");
+      setAirspaceTfrTypeFilter("all");
+      setAirspaceActiveOnly(true);
+    }
+  }, []);
+
   const [selectedAircraft, setSelectedAircraft] =
     useState<AircraftState | null>(null);
   const [signalLost, setSignalLost] = useState(false);
@@ -180,6 +204,10 @@ export default function Home() {
   const [satCategoryFilter, setSatCategoryFilter] = useState<SatelliteCategory | "all">("all");
   const [satOrbitFilter, setSatOrbitFilter] = useState<"all" | "leo" | "meo" | "geo">("all");
   const [satSearchQuery, setSatSearchQuery] = useState("");
+
+  const [airspaceTypeFilter, setAirspaceTypeFilter] = useState<AirspaceType | "all">("all");
+  const [airspaceTfrTypeFilter, setAirspaceTfrTypeFilter] = useState<TfrType | "all">("all");
+  const [airspaceActiveOnly, setAirspaceActiveOnly] = useState(true);
 
   const filteredAircraft = useMemo(() => {
     let result = aircraft;
@@ -259,6 +287,22 @@ export default function Home() {
 
     return result;
   }, [satellites, satSearchQuery, satCategoryFilter, satOrbitFilter]);
+
+  const filteredAirspaces = useMemo(() => {
+    let result = airspaceActiveOnly ? airspaceActiveZones : airspaceAllZones;
+
+    if (airspaceTypeFilter !== "all") {
+      result = result.filter((z) => z.type === airspaceTypeFilter);
+    }
+
+    if (airspaceTfrTypeFilter !== "all") {
+      result = result.filter((z) => z.tfrType === airspaceTfrTypeFilter);
+    }
+
+    return result;
+  }, [airspaceActiveZones, airspaceAllZones, airspaceActiveOnly, airspaceTypeFilter, airspaceTfrTypeFilter]);
+
+  const airspaceTotalCount = airspaceActiveOnly ? airspaceActiveZones.length : airspaceAllZones.length;
 
   const aircraftCountries = useMemo(() => {
     const countrySet = new Set<string>();
@@ -433,6 +477,18 @@ export default function Home() {
           totalCount={satellites.length}
         />
       )}
+      {airspaceEnabled && (
+        <AirspaceFilterBar
+          typeFilter={airspaceTypeFilter}
+          onTypeFilterChange={setAirspaceTypeFilter}
+          tfrTypeFilter={airspaceTfrTypeFilter}
+          onTfrTypeFilterChange={setAirspaceTfrTypeFilter}
+          activeOnly={airspaceActiveOnly}
+          onActiveOnlyChange={setAirspaceActiveOnly}
+          filteredCount={filteredAirspaces.length}
+          totalCount={airspaceTotalCount}
+        />
+      )}
       {/* Error banner — non-blocking, shows below filter bar */}
       {error && !loading && (
         <div className="flex items-center gap-2 bg-red-900/70 px-4 py-1.5 text-xs text-red-200">
@@ -503,6 +559,10 @@ export default function Home() {
           onSatelliteToggle={handleSatelliteToggle}
           satelliteCount={filteredSatellites.length}
           satelliteTotalCount={satellites.length}
+          airspaceEnabled={airspaceEnabled}
+          onAirspaceToggle={handleAirspaceToggle}
+          airspaceCount={filteredAirspaces.length}
+          airspaceTotalCount={airspaceTotalCount}
         />
       </div>
     </main>

@@ -5,6 +5,7 @@ const POLL_INTERVAL_MS = 300_000; // 5 minutes
 
 interface UseAirspaceDataReturn {
   zones: AirspaceZone[];
+  allZones: AirspaceZone[];
   loading: boolean;
   error: string | null;
   lastUpdated: Date | null;
@@ -93,6 +94,7 @@ export const useAirspaceData = (enabled: boolean): UseAirspaceDataReturn => {
 
   return {
     zones,
+    allZones,
     loading,
     error,
     lastUpdated,

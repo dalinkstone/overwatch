@@ -19,6 +19,10 @@ interface LayerControlProps {
   onSatelliteToggle: () => void;
   satelliteCount: number;
   satelliteTotalCount?: number;
+  airspaceEnabled: boolean;
+  onAirspaceToggle: (enabled: boolean) => void;
+  airspaceCount: number;
+  airspaceTotalCount?: number;
 }
 
 const getVesselStatusDot = (
@@ -53,6 +57,10 @@ export const LayerControl = ({
   onSatelliteToggle,
   satelliteCount,
   satelliteTotalCount,
+  airspaceEnabled,
+  onAirspaceToggle,
+  airspaceCount,
+  airspaceTotalCount,
 }: LayerControlProps) => {
   const isDisabled = vesselStatus.state === "disabled";
   const statusDot = getVesselStatusDot(vesselEnabled, vesselStatus.state);
@@ -182,6 +190,61 @@ export const LayerControl = ({
           title={
             satelliteEnabled
               ? (satelliteTotalCount ?? satelliteCount) > 0
+                ? "Data loaded"
+                : "Loading..."
+              : "Off"
+          }
+        />
+      </div>
+
+      {/* Airspace row — toggleable */}
+      <div
+        className="flex items-center gap-2 py-1 cursor-pointer"
+        onClick={() => onAirspaceToggle(!airspaceEnabled)}
+        title={airspaceEnabled ? `Airspace: ${airspaceCount} zones` : "Airspace: Off"}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={airspaceEnabled ? "#f97316" : "#6b7280"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+          <path d="M12 9v4" />
+          <path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 001.636 2.871h16.214a1.914 1.914 0 001.636-2.87L13.637 3.59a1.914 1.914 0 00-3.274 0z" />
+          <path d="M12 17h.01" />
+        </svg>
+        <span className="text-xs text-zinc-200">
+          {airspaceEnabled
+            ? airspaceTotalCount !== undefined && airspaceCount !== airspaceTotalCount
+              ? `Airspace (${airspaceCount.toLocaleString()} of ${airspaceTotalCount.toLocaleString()})`
+              : `Airspace (${airspaceCount.toLocaleString()})`
+            : "Airspace"}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={airspaceEnabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAirspaceToggle(!airspaceEnabled);
+          }}
+          className={`ml-auto relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors cursor-pointer ${
+            airspaceEnabled ? "bg-orange-500" : "bg-zinc-600"
+          }`}
+        >
+          <span
+            className={`inline-block h-3 w-3 rounded-full bg-white shadow transform transition-transform mt-0.5 ${
+              airspaceEnabled ? "translate-x-3.5 ml-0" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+        <span
+          className="h-2 w-2 rounded-full shrink-0"
+          style={{
+            backgroundColor: airspaceEnabled
+              ? (airspaceTotalCount ?? airspaceCount) > 0
+                ? "#22c55e"
+                : "#eab308"
+              : "#6b7280",
+          }}
+          title={
+            airspaceEnabled
+              ? (airspaceTotalCount ?? airspaceCount) > 0
                 ? "Data loaded"
                 : "Loading..."
               : "Off"
