@@ -163,30 +163,18 @@ overwatch/
     │           └── route.ts     # Proxy to FAA (planned)
     ├── components/
     │   ├── AircraftMarker.tsx   # Type-specific Leaflet marker with SVG icons
-    │   ├── AircraftPanel.tsx    # Slide-in detail panel for selected aircraft
-    │   ├── Map.tsx              # Leaflet MapContainer with all layer markers
+    │   ├── AircraftPanel.tsx    # Detail panel (sidebar desktop, bottom sheet mobile)
+    │   ├── Map.tsx              # Vanilla Leaflet map with ADSB.lol attribution
     │   ├── MapWrapper.tsx       # Dynamic import wrapper (ssr: false)
     │   ├── StatusBar.tsx        # Top bar: counts, last updated, connection status
-    │   ├── FilterBar.tsx        # Search + filters (planned)
-    │   ├── LayerControl.tsx     # Data layer toggles (planned)
-    │   ├── VesselMarker.tsx     # Ship marker (planned)
-    │   ├── SatelliteMarker.tsx  # Satellite marker (planned)
-    │   ├── ConflictMarker.tsx   # Conflict event marker (planned)
-    │   └── NotamOverlay.tsx     # TFR polygon overlay (planned)
+    │   └── FilterBar.tsx        # Search + altitude/category filters (responsive)
     ├── hooks/
-    │   ├── useAircraftData.ts   # Aircraft polling hook (active)
-    │   ├── useVesselData.ts     # Vessel polling hook (planned)
-    │   ├── useSatelliteData.ts  # Satellite data hook (planned)
-    │   └── useConflictData.ts   # Conflict event hook (planned)
+    │   └── useAircraftData.ts   # Aircraft polling hook (active)
     ├── lib/
     │   ├── types.ts             # AircraftState, AircraftResponse, type guards
     │   ├── api.ts               # fetchMilitaryAircraft client function
     │   ├── utils.ts             # Formatting helpers
-    │   ├── aircraftIcons.ts     # Type classification + SVG icon mapping (Phase 8)
-    │   ├── maritimeTypes.ts     # Vessel interfaces (planned)
-    │   ├── satelliteTypes.ts    # Satellite interfaces (planned)
-    │   ├── conflictTypes.ts     # Conflict event interfaces (planned)
-    │   └── dataLayers.ts        # Layer toggle system (planned)
+    │   └── aircraftIcons.ts     # Type classification + SVG icon mapping (Phase 8)
     └── styles/
         └── globals.css          # Tailwind base/components/utilities directives
 ```
@@ -407,10 +395,11 @@ Browser → GET /api/aircraft
 | `src/lib/types.ts` | `AircraftState`, `AircraftResponse`, `hasPosition`, `isMilitary` | utils.ts, api.ts, all components, hooks |
 | `src/lib/utils.ts` | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` | AircraftMarker, AircraftPanel |
 | `src/lib/api.ts` | `fetchMilitaryAircraft` | useAircraftData hook |
-| `src/lib/aircraftIcons.ts` | `AircraftCategory`, `getAircraftCategory`, `getAircraftIconSvg`, `ICON_SIZES`, `AIRCRAFT_TYPE_MAP` | AircraftMarker, AircraftPanel, FilterBar |
+| `src/lib/aircraftIcons.ts` | `AircraftCategory`, `getAircraftCategory`, `getAircraftIconSvg`, `ICON_SIZES`, `AIRCRAFT_TYPE_MAP`, `getCategoryLabel` | AircraftMarker, AircraftPanel, page.tsx |
 | `src/hooks/useAircraftData.ts` | `useAircraftData` | page.tsx |
 | `src/components/AircraftPanel.tsx` | `AircraftPanel` | page.tsx |
 | `src/components/StatusBar.tsx` | `StatusBar` | page.tsx |
+| `src/components/FilterBar.tsx` | `FilterBar` | page.tsx |
 | `src/components/MapWrapper.tsx` | `MapWrapper` | page.tsx |
 | `src/components/Map.tsx` | `default` (Map) | MapWrapper (via dynamic import) |
 | `src/components/AircraftMarker.tsx` | `AircraftMarker` | Map.tsx |
@@ -429,6 +418,8 @@ types.ts  ←── utils.ts
     │    ↑
     │    │
     ├── page.tsx ──→ StatusBar.tsx
+    │    │    │
+    │    │    └──→ FilterBar.tsx
     │    │
     │    └──→ AircraftPanel.tsx ←── aircraftIcons.ts
     │    │                              ↑
@@ -497,21 +488,22 @@ npm run lint
 npm run build
 ```
 
-### Current state (after Phase 7)
+### Current state (after Phase 10)
 
 When you open `http://localhost:3000`, you will see:
 
 1. A dark status bar at the top showing total aircraft count, tracked count, last updated time, and connection indicator
-2. A full-screen Leaflet map with plane icons for military aircraft
-3. Plane icons colored by altitude: green (ground), blue (<10,000 ft), red (>=10,000 ft), rotated to match heading
-4. Data refreshes automatically every 10 seconds (only confirmed military aircraft shown)
-5. Clicking a plane shows a popup and opens a slide-in detail panel
-6. If a selected aircraft disappears from data, a "Signal lost" indicator appears
-
-### After Phase 8 (aircraft icons), you will additionally see:
-
-7. Different icon shapes for different aircraft types (fighters, transports, helicopters, etc.)
-8. Aircraft category badges in the detail panel and popups
+2. A filter bar with search input, altitude band dropdown, and aircraft category dropdown
+3. A loading overlay ("Loading aircraft data...") while the initial fetch is in progress
+4. A full-screen Leaflet map with type-specific plane icons for military aircraft
+5. Plane icons colored by altitude: green (ground), blue (<10,000 ft), red (>=10,000 ft), rotated to match heading
+6. Different icon shapes for different aircraft types (fighters, transports, helicopters, etc.)
+7. Data refreshes automatically every 10 seconds (only confirmed military aircraft shown)
+8. Clicking a plane shows a popup and opens a detail panel (sidebar on desktop, bottom sheet on mobile)
+9. If a selected aircraft disappears from data, a "Signal lost" indicator appears
+10. If the API is unreachable, a red error banner appears below the filter bar; the map retains last known positions
+11. Map attribution includes both OpenStreetMap and ADSB.lol contributors
+12. Amber aircraft favicon and proper page metadata
 
 ---
 
@@ -519,10 +511,10 @@ When you open `http://localhost:3000`, you will see:
 
 | Tool | Version | Purpose |
 |---|---|---|
-| Next.js | 14.2.x | App framework, dev server, API routes, production build |
+| Next.js | 16.x | App framework, dev server, API routes, production build |
 | TypeScript | 5.x | Static type checking (`tsc --noEmit`) |
 | Tailwind CSS | 3.4.x | Utility-first CSS (processed via PostCSS) |
-| ESLint | 8.x | Code linting with `next/core-web-vitals` rules |
+| ESLint | 10.x | Code linting with flat config (`@eslint/js` + `typescript-eslint`) |
 | Leaflet | 1.9.x | Interactive map rendering (loaded client-side only) |
 | react-leaflet | 4.2.x | React bindings for Leaflet components |
 | satellite.js | TBD | SGP4 orbit propagator (planned, for satellite layer) |
@@ -673,6 +665,80 @@ Changes from Phase 5:
 
 ---
 
+## Phase 9: Filter Bar
+
+Phase 9 added search and filter controls to narrow the displayed aircraft.
+
+### `src/components/FilterBar.tsx`
+
+A responsive filter bar rendered between the StatusBar and the map area.
+
+**Controls:**
+
+1. **Search input** — Matches callsign, registration, hex code, or ICAO type code (case-insensitive). Full-width on mobile, 256px on desktop.
+2. **Altitude filter** — Dropdown: All / Ground only / Below 10,000 ft / 10,000-30,000 ft / Above 30,000 ft
+3. **Category filter** — Dropdown: All / Fighter / Tanker-Transport / Helicopter / Surveillance / Trainer / Bomber / UAV / Unknown
+4. **Aircraft count** — "Showing X of Y military aircraft" (hidden on mobile for space)
+
+**Filter logic (in `page.tsx`):**
+
+- `matchesSearch(ac, query)` — case-insensitive match on `flight`, `r`, `hex`, `t`
+- `matchesAltitude(ac, filter)` — checks `alt_baro` against altitude bands
+- `matchesCategory(ac, filter)` — uses `getAircraftCategory(ac.t)` to compare
+- Filters are chained via `useMemo` — only recomputed when aircraft data or filter state changes
+- Filtered aircraft array is passed to `MapWrapper` for rendering
+
+---
+
+## Phase 10: Polish
+
+Phase 10 addressed UX polish, responsive design, metadata, and build pipeline fixes.
+
+### Loading State
+
+A semi-transparent dark overlay with animated spinner and "Loading aircraft data..." text, displayed while `loading === true` (during initial data fetch). Positioned as an absolute overlay on the map area at `z-[900]`.
+
+### Error Banner
+
+A red banner below the FilterBar, shown when `error` is set and `loading` is false. Displays "Unable to reach aircraft data source. Retrying..." with the last successful update time on the right. The map retains last known aircraft positions (error does not clear data).
+
+### Empty State
+
+A centered message "No military aircraft currently broadcasting" on the map area, shown when `aircraft.length === 0`, not loading, and no error.
+
+### Favicon
+
+An SVG favicon at `src/app/icon.svg` — amber aircraft silhouette on a dark rounded-rect background. Next.js App Router auto-serves it at `/icon.svg`.
+
+### Page Metadata
+
+Updated `layout.tsx` metadata:
+- Title: "Overwatch — Military Movement Tracker"
+- Description: comprehensive meta description for SEO/social sharing
+
+### Map Attribution
+
+Added ADSB.lol attribution alongside OpenStreetMap:
+```
+© OpenStreetMap contributors | Data: ADSB.lol contributors (ODbL)
+```
+
+### Responsive Design
+
+- **AircraftPanel:** Desktop (>=768px) slides in from right (320px wide). Mobile (<768px) slides up from bottom (full width, 60vh height).
+- **FilterBar:** Search input full-width on mobile, fixed 256px on desktop. Dropdowns flex to fill row on mobile. Aircraft count hidden on mobile.
+- Both use Tailwind responsive prefixes (`md:`) for breakpoint switching.
+
+### ESLint Migration
+
+Migrated from ESLint 8 legacy config (`.eslintrc.json`) to ESLint 10 flat config (`eslint.config.mjs`):
+- Removed broken `eslint-config-next@0.2.4` (third-party, not official Next.js)
+- Installed `@eslint/js` and `typescript-eslint`
+- Updated `package.json` lint script from `next lint` (removed in Next.js 16) to `eslint src/`
+- Fixed unused import of `MapContainer`/`TileLayer` in `Map.tsx` (uses vanilla Leaflet, not react-leaflet components)
+
+---
+
 ## Additional Data Layers
 
 ### Maritime Vessel Tracking (AIS) — Layer 2
@@ -779,9 +845,9 @@ interface DataLayerState {
 | ~~5~~ | ~~Map Components~~ | ~~Done~~ |
 | ~~6~~ | ~~Polling + Integration~~ | ~~Done~~ |
 | ~~7~~ | ~~Detail Panel~~ | ~~Done — AircraftPanel, selection state, signal lost, isMilitary filter~~ |
-| 8 | Aircraft-Type Icons | Type classification, category-specific SVGs, updated markers + panel |
-| 9 | Filter Bar | Search, altitude filter, category filter, aircraft count display |
-| 10 | Polish | Loading/error/empty states, responsive design, metadata, attribution |
+| ~~8~~ | ~~Aircraft-Type Icons~~ | ~~Done — Type classification, category-specific SVGs, updated markers + panel~~ |
+| ~~9~~ | ~~Filter Bar~~ | ~~Done — Search, altitude filter, category filter, aircraft count display~~ |
+| ~~10~~ | ~~Polish~~ | ~~Done — Loading/error/empty states, favicon, metadata, responsive, attribution, ESLint migration~~ |
 | 11 | Final Verification | End-to-end testing, build validation, documentation review |
 | 12 | Maritime Layer | AIS vessel tracking, ship markers, vessel detail |
 | 13 | Satellite Layer | CelesTrak TLEs, SGP4 propagation, satellite markers |

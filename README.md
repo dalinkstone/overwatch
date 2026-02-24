@@ -125,12 +125,12 @@ Real-time seismic data as GeoJSON. Supplementary awareness layer — large seism
 |---|---|---|
 | **Runtime** | Node.js 20+ | LTS, stable |
 | **Language** | TypeScript 5 | Type safety |
-| **Framework** | Next.js 14 (App Router) | Simple fullstack, API routes as proxy |
+| **Framework** | Next.js 16 (App Router) | Simple fullstack, API routes as proxy |
 | **Map** | Leaflet 1.9 + react-leaflet 4 | Free, no API key, OSM tiles |
 | **Tiles** | OpenStreetMap via `tile.openstreetmap.org` | Free, open, reliable |
 | **Styling** | Tailwind CSS 3 | Utility-first, minimal config |
 | **HTTP** | Native `fetch` | No extra dependencies |
-| **Linting** | ESLint + Prettier | Consistent code |
+| **Linting** | ESLint 10 (flat config) + typescript-eslint | Consistent code |
 | **Satellites** | satellite.js (planned) | SGP4 orbit propagation |
 
 ### Why These Choices
@@ -151,56 +151,38 @@ overwatch/
 ├── package.json
 ├── tsconfig.json
 ├── tailwind.config.ts
-├── next.config.ts
+├── next.config.mjs
+├── eslint.config.mjs            # ESLint 10 flat config
 ├── .env.example                 # NEXT_PUBLIC_API_BASE_URL etc.
-├── .eslintrc.json
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx           # Root layout
-│   │   ├── page.tsx             # Main page (map + sidebar + layers)
+│   │   ├── layout.tsx           # Root layout + metadata
+│   │   ├── page.tsx             # Main page (map + filters + panel + overlays)
+│   │   ├── icon.svg             # Favicon (amber aircraft silhouette)
 │   │   └── api/
-│   │       ├── aircraft/
-│   │       │   └── route.ts     # Proxy to ADSB.lol
-│   │       ├── vessels/
-│   │       │   └── route.ts     # Proxy to AIS data (planned)
-│   │       ├── satellites/
-│   │       │   └── route.ts     # Proxy to CelesTrak (planned)
-│   │       ├── conflicts/
-│   │       │   └── route.ts     # Proxy to GDELT (planned)
-│   │       └── notams/
-│   │           └── route.ts     # Proxy to FAA NOTAM API (planned)
+│   │       └── aircraft/
+│   │           └── route.ts     # Proxy to ADSB.lol
 │   ├── components/
 │   │   ├── Map.tsx              # Leaflet map (client component, no SSR)
 │   │   ├── MapWrapper.tsx       # Dynamic import wrapper for Map (ssr: false)
 │   │   ├── AircraftMarker.tsx   # Aircraft marker with type-specific icons
-│   │   ├── VesselMarker.tsx     # Ship marker (planned)
-│   │   ├── SatelliteMarker.tsx  # Satellite marker (planned)
-│   │   ├── ConflictMarker.tsx   # Conflict event marker (planned)
-│   │   ├── NotamOverlay.tsx     # TFR polygon overlay (planned)
-│   │   ├── StatusBar.tsx        # Connection status + counts
-│   │   ├── AircraftPanel.tsx    # Detail sidebar/panel
-│   │   ├── FilterBar.tsx        # Search + type/altitude/category filters
-│   │   └── LayerControl.tsx     # Data layer toggles (planned)
+│   │   ├── AircraftPanel.tsx    # Detail panel (sidebar on desktop, bottom sheet on mobile)
+│   │   ├── FilterBar.tsx        # Search + altitude/category filters (responsive)
+│   │   └── StatusBar.tsx        # Connection status + counts
 │   ├── hooks/
-│   │   ├── useAircraftData.ts   # Aircraft polling hook (10s interval)
-│   │   ├── useVesselData.ts     # Vessel polling hook (planned, 30s interval)
-│   │   ├── useSatelliteData.ts  # Satellite data hook (planned, 5min TLE fetch + 5s propagation)
-│   │   └── useConflictData.ts   # Conflict event hook (planned, 15min interval)
+│   │   └── useAircraftData.ts   # Aircraft polling hook (10s interval)
 │   ├── lib/
 │   │   ├── api.ts               # Aircraft fetch wrapper
 │   │   ├── types.ts             # Aircraft TypeScript interfaces
 │   │   ├── utils.ts             # Formatting helpers
-│   │   ├── aircraftIcons.ts     # Type classification + SVG icon mapping
-│   │   ├── maritimeTypes.ts     # Vessel interfaces (planned)
-│   │   ├── satelliteTypes.ts    # Satellite interfaces (planned)
-│   │   ├── conflictTypes.ts     # Conflict event interfaces (planned)
-│   │   └── dataLayers.ts        # Layer toggle system (planned)
+│   │   └── aircraftIcons.ts     # Type classification + SVG icon mapping
 │   └── styles/
 │       └── globals.css          # Tailwind directives
 └── public/
-    └── icons/
-        └── aircraft.svg         # Fallback plane icon for map markers
+    └── favicon.svg              # Favicon (also served from src/app/icon.svg)
 ```
+
+Planned files for future data layers (vessels, satellites, conflicts, NOTAMs) are documented in IMPLEMENTATION.md.
 
 ## Running Locally
 
@@ -212,7 +194,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. No API keys needed. You should see a status bar at the top and a map with military aircraft updating every 10 seconds, rendered with type-specific icons.
+Open `http://localhost:3000`. No API keys needed. You should see a status bar, filter bar, and a map with military aircraft updating every 10 seconds, rendered with type-specific icons. Click any aircraft for details. Use the search and filters to narrow results. The app is responsive and works on mobile.
 
 ## Environment Variables
 

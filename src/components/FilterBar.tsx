@@ -22,9 +22,9 @@ export const FilterBar = ({
   totalCount,
 }: FilterBarProps) => {
   return (
-    <div className="flex items-center gap-3 bg-zinc-800 px-4 py-2 text-xs text-white border-t border-zinc-700/50">
+    <div className="flex flex-wrap items-center gap-2 bg-zinc-800 px-3 py-2 text-xs text-white border-t border-zinc-700/50 md:gap-3 md:px-4">
       {/* Search box */}
-      <div className="relative">
+      <div className="relative w-full md:w-auto">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 20 20"
@@ -42,7 +42,7 @@ export const FilterBar = ({
           placeholder="Search callsign, reg, hex, type..."
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="h-7 w-64 rounded bg-zinc-900 pl-7 pr-3 text-xs text-white placeholder-zinc-500 outline-none ring-1 ring-zinc-700 transition-colors focus:ring-amber-500/50"
+          className="h-7 w-full rounded bg-zinc-900 pl-7 pr-3 text-xs text-white placeholder-zinc-500 outline-none ring-1 ring-zinc-700 transition-colors focus:ring-amber-500/50 md:w-64"
         />
         {searchQuery && (
           <button
@@ -66,7 +66,7 @@ export const FilterBar = ({
       <select
         value={altitudeFilter}
         onChange={(e) => onAltitudeFilterChange(e.target.value)}
-        className="h-7 rounded bg-zinc-900 px-2 text-xs text-white outline-none ring-1 ring-zinc-700 transition-colors focus:ring-amber-500/50 cursor-pointer"
+        className="h-7 flex-1 rounded bg-zinc-900 px-2 text-xs text-white outline-none ring-1 ring-zinc-700 transition-colors focus:ring-amber-500/50 cursor-pointer md:flex-none"
       >
         <option value="all">All altitudes</option>
         <option value="ground">Ground only</option>
@@ -79,7 +79,7 @@ export const FilterBar = ({
       <select
         value={categoryFilter}
         onChange={(e) => onCategoryFilterChange(e.target.value)}
-        className="h-7 rounded bg-zinc-900 px-2 text-xs text-white outline-none ring-1 ring-zinc-700 transition-colors focus:ring-amber-500/50 cursor-pointer"
+        className="h-7 flex-1 rounded bg-zinc-900 px-2 text-xs text-white outline-none ring-1 ring-zinc-700 transition-colors focus:ring-amber-500/50 cursor-pointer md:flex-none"
       >
         <option value="all">All types</option>
         <option value="fighter">Fighter</option>
@@ -93,7 +93,7 @@ export const FilterBar = ({
       </select>
 
       {/* Aircraft count */}
-      <div className="ml-auto text-zinc-400">
+      <div className="hidden text-zinc-400 md:ml-auto md:block">
         Showing{" "}
         <span className="font-medium text-white">{filteredCount}</span>{" "}
         of{" "}

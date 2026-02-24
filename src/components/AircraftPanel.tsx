@@ -34,9 +34,10 @@ export const AircraftPanel = ({
 }: AircraftPanelProps) => {
   return (
     <div
-      className={`absolute right-0 top-0 z-[1000] h-full w-80 transform bg-zinc-800 text-white shadow-[-4px_0_16px_rgba(0,0,0,0.4)] transition-transform duration-300 ease-in-out ${
-        aircraft ? "translate-x-0" : "translate-x-full"
-      } rounded-l-lg`}
+      className={`absolute z-[1000] transform bg-zinc-800 text-white transition-transform duration-300 ease-in-out
+        bottom-0 left-0 right-0 h-[60vh] rounded-t-lg shadow-[0_-4px_16px_rgba(0,0,0,0.4)]
+        md:bottom-auto md:left-auto md:right-0 md:top-0 md:h-full md:w-80 md:rounded-t-none md:rounded-l-lg md:shadow-[-4px_0_16px_rgba(0,0,0,0.4)]
+        ${aircraft ? "translate-y-0 md:translate-x-0 md:translate-y-0" : "translate-y-full md:translate-x-full md:translate-y-0"}`}
     >
       {aircraft && (
         <div className="flex h-full flex-col overflow-y-auto p-4">

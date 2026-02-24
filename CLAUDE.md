@@ -4,7 +4,7 @@
 
 Overwatch is a real-time military movement intelligence dashboard using publicly available data sources. The primary layer is aircraft tracking via ADSB.lol's free public API on a Leaflet.js map. Additional planned layers include maritime vessel tracking (AIS), satellite orbit tracking, conflict event data, and airspace restriction overlays.
 
-It is a Next.js 14 App Router project in TypeScript with Tailwind CSS.
+It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 
 ## Current Implementation Status
 
@@ -15,6 +15,8 @@ It is a Next.js 14 App Router project in TypeScript with Tailwind CSS.
 - **Phase 6 (Polling + Integration):** Complete — useAircraftData hook, StatusBar, page wiring, live data on map
 - **Phase 7 (Detail Panel):** Complete — AircraftPanel slide-in, aircraft selection, signal lost tracking, isMilitary filtering
 - **Phase 8 (Aircraft Icons):** Complete — AircraftCategory type system, ICAO type code mapping, category-specific SVG silhouettes, icon size rules, AircraftMarker + AircraftPanel integration
+- **Phase 9 (Filter Bar):** Complete — search by callsign/reg/hex/type, altitude band filter, category filter, aircraft count display
+- **Phase 10 (Polish):** Complete — loading/error/empty states, favicon, page metadata, ADSB.lol attribution, responsive mobile layout, ESLint flat config migration
 
 ### What's Implemented
 
@@ -24,15 +26,18 @@ It is a Next.js 14 App Router project in TypeScript with Tailwind CSS.
 | `src/lib/utils.ts` | Done | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` helpers |
 | `src/lib/api.ts` | Done | `fetchMilitaryAircraft` — fetches from local proxy with validation |
 | `src/app/api/aircraft/route.ts` | Done | Proxies to ADSB.lol `/v2/mil` with 15s timeout, cache headers, structured 502 errors |
-| `src/app/layout.tsx` | Done | Root layout with metadata and globals.css import |
-| `src/app/page.tsx` | Done | Client component with useAircraftData hook, StatusBar, MapWrapper, and AircraftPanel selection |
+| `src/app/layout.tsx` | Done | Root layout with metadata ("Overwatch — Military Movement Tracker"), favicon, globals.css import |
+| `src/app/icon.svg` | Done | SVG favicon — amber aircraft silhouette on dark background |
+| `src/app/page.tsx` | Done | Client component with useAircraftData, StatusBar, FilterBar, MapWrapper, AircraftPanel, loading/error/empty overlays |
 | `src/lib/aircraftIcons.ts` | Done | `AircraftCategory` type, `AIRCRAFT_TYPE_MAP`, `getAircraftCategory()`, `ICON_SIZES`, `getAircraftIconSvg()`, `getCategoryLabel()` |
 | `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with category-specific DivIcon SVG silhouettes, altitude-based coloring, track rotation, popup with category badge |
-| `src/components/Map.tsx` | Done | Client component with `MapContainer`, `TileLayer`, renders `AircraftMarker` for each positioned aircraft |
+| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders `AircraftMarker` for each positioned aircraft, includes ADSB.lol attribution |
 | `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
-| `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel for selected aircraft with all fields, signal lost indicator, category badge, close button |
+| `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel — right sidebar on desktop, bottom sheet on mobile (<768px), signal lost indicator, category badge |
 | `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, last updated time, connection status with colored indicator |
-| `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by isMilitary + hasPosition, preserves data on failure |
+| `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by hasPosition, preserves data on failure |
+| `src/components/FilterBar.tsx` | Done | Search (callsign/reg/hex/type), altitude band filter, category filter, aircraft count — responsive (full-width search on mobile) |
+| `eslint.config.mjs` | Done | ESLint 10 flat config with `@eslint/js` + `typescript-eslint` |
 
 ### What's Planned
 
@@ -48,14 +53,13 @@ It is a Next.js 14 App Router project in TypeScript with Tailwind CSS.
 | `src/components/SatelliteMarker.tsx` | Planned | Satellite orbit/position marker |
 | `src/components/ConflictMarker.tsx` | Planned | Conflict event marker |
 | `src/components/LayerControl.tsx` | Planned | Data layer toggle panel |
-| `src/components/FilterBar.tsx` | Planned | Search, altitude, type, layer filters |
 
 ## Commands
 
 - `npm run dev` — Start dev server on port 3000
 - `npm run build` — Production build
 - `npm run start` — Start production server
-- `npm run lint` — Run ESLint
+- `npm run lint` — Run ESLint (uses `eslint src/` with flat config)
 - `npm run type-check` — Run `tsc --noEmit`
 
 ## Architecture Rules
@@ -163,8 +167,8 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 ### Leaflet Map
 
 - Tile URL: `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`
-- Attribution: `© OpenStreetMap contributors`
-- Use `react-leaflet` v4 components: `MapContainer`, `TileLayer`, `Marker`, `Popup`
+- Attribution: `© OpenStreetMap contributors | Data: ADSB.lol contributors (ODbL)`
+- Map is created using vanilla Leaflet (`L.map`, `L.tileLayer`) — not react-leaflet components
 - Leaflet CSS must be imported: `import 'leaflet/dist/leaflet.css'`
 - Custom plane icon using Leaflet's `DivIcon` with inline SVG rotated by the aircraft's `track` heading
 
@@ -177,8 +181,9 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
   - Icon size varies by category (see Icon Size Rules above)
   - Altitude-based coloring: green (`#22c55e`) for ground, blue (`#3b82f6`) for < 10,000 ft, red (`#ef4444`) for >= 10,000 ft
   - Popup displays: formatted callsign, type code, registration, altitude, speed, category badge
-- **Map.tsx** — `"use client"` component importing Leaflet CSS, renders `MapContainer` + `TileLayer` + `AircraftMarker` per positioned aircraft (keyed by `hex`)
+- **Map.tsx** — `"use client"` component importing Leaflet CSS, creates map via `L.map` + `L.tileLayer`, renders `AircraftMarker` per positioned aircraft (keyed by `hex`)
   - Map center/zoom read from env vars with defaults (38.9, -77.0, zoom 5)
+  - Attribution includes both OpenStreetMap and ADSB.lol
 - **MapWrapper.tsx** — uses `next/dynamic` to import `Map` with `{ ssr: false }`, shows "Loading map..." placeholder
   - This is what `page.tsx` renders — never import `Map.tsx` directly from a server component
 
@@ -201,13 +206,23 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 
 ### AircraftPanel (src/components/AircraftPanel.tsx)
 
-- Slide-in panel on the right side (320px wide, `zinc-800` background, rounded left corners, shadow)
+- **Desktop (>=768px):** Slide-in panel from right side (320px wide, rounded left corners)
+- **Mobile (<768px):** Slide-up bottom sheet (full width, 60vh height, rounded top corners)
 - Props: `aircraft` (AircraftState | null), `onClose` callback, `signalLost` boolean
-- When `aircraft` is null, panel slides off-screen via `translate-x-full` with CSS transition
+- When `aircraft` is null, panel slides off-screen via CSS transition
 - Displays: callsign (bold header), ICAO hex, registration, type code, altitude, speed, heading, squawk, lat/lon (4 decimal places), last seen time, military badge, **aircraft category badge**
 - Close button (X) in top-right corner
 - "Signal lost" indicator (red badge with pulse animation) when aircraft disappears from data
 - Absolutely positioned overlaying the map at `z-[1000]`
+
+### FilterBar (src/components/FilterBar.tsx)
+
+- Dark background (`zinc-800`), below StatusBar
+- **Search:** text input matching callsign, registration, hex, or type code (case-insensitive)
+- **Altitude filter:** All / Ground / Below 10k / 10k-30k / Above 30k
+- **Category filter:** All / Fighter / Tanker-Transport / Helicopter / Surveillance / Trainer / Bomber / UAV / Unknown
+- **Count display:** "Showing X of Y military aircraft" (hidden on mobile)
+- **Responsive:** search input full-width on mobile (<768px), dropdowns flex to fill row
 
 ### Aircraft Selection (src/app/page.tsx)
 
@@ -216,6 +231,12 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 - On each poll refresh, updates selected aircraft data by matching `hex` code
 - If the selected aircraft disappears from the data, keeps showing last known state with "Signal lost" indicator
 - Close handler clears selection and resets signal lost state
+
+### Loading / Error / Empty States (src/app/page.tsx)
+
+- **Loading:** Semi-transparent dark overlay with spinning icon + "Loading aircraft data..." (shown while initial fetch is in progress)
+- **Error:** Red banner below FilterBar — "Unable to reach aircraft data source. Retrying..." with last successful update time. Map still shows last known positions.
+- **Empty:** Centered message on map — "No military aircraft currently broadcasting" (when API returns 0 aircraft and no error)
 
 ---
 
@@ -332,7 +353,7 @@ Each disabled layer stops polling (clears its interval) to conserve bandwidth an
 Only install these packages. Do not add others without explicit approval:
 
 ```
-next@14
+next@16
 react@18
 react-dom@18
 leaflet@1
@@ -342,8 +363,9 @@ tailwindcss@3
 postcss
 autoprefixer
 typescript@5
-eslint
-eslint-config-next
+eslint@10
+@eslint/js
+typescript-eslint
 @types/react
 @types/react-dom
 @types/node

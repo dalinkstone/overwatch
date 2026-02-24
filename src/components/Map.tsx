@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { AircraftState, hasPosition } from "@/lib/types";
 import { AircraftMarker } from "./AircraftMarker";
-import { MapContainer, TileLayer } from "react-leaflet";
 
 interface MapProps {
   aircraft: AircraftState[];
@@ -36,7 +35,7 @@ const Map = ({ aircraft, onAircraftClick }: MapProps) => {
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Data: <a href="https://www.adsb.lol/">ADSB.lol</a> contributors (ODbL)',
     }).addTo(map);
 
     mapRef.current = map;
