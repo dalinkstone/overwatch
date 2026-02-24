@@ -15,6 +15,10 @@ interface LayerControlProps {
   vesselCount: number;
   vesselTotalCount?: number;
   vesselStatus: VesselStatus;
+  satelliteEnabled: boolean;
+  onSatelliteToggle: () => void;
+  satelliteCount: number;
+  satelliteTotalCount?: number;
 }
 
 const getVesselStatusDot = (
@@ -45,6 +49,10 @@ export const LayerControl = ({
   vesselCount,
   vesselTotalCount,
   vesselStatus,
+  satelliteEnabled,
+  onSatelliteToggle,
+  satelliteCount,
+  satelliteTotalCount,
 }: LayerControlProps) => {
   const isDisabled = vesselStatus.state === "disabled";
   const statusDot = getVesselStatusDot(vesselEnabled, vesselStatus.state);
@@ -124,6 +132,62 @@ export const LayerControl = ({
           API key required
         </div>
       )}
+
+      {/* Satellite row — toggleable */}
+      <div
+        className="flex items-center gap-2 py-1 cursor-pointer"
+        onClick={onSatelliteToggle}
+        title={satelliteEnabled ? `Satellites: ${satelliteCount} tracked` : "Satellites: Off"}
+      >
+        <span
+          className="text-sm shrink-0 leading-none"
+          style={{ color: satelliteEnabled ? "#a855f7" : "#6b7280", width: 14, textAlign: "center" }}
+        >
+          ◆
+        </span>
+        <span className="text-xs text-zinc-200">
+          {satelliteEnabled
+            ? satelliteTotalCount !== undefined && satelliteCount !== satelliteTotalCount
+              ? `Satellites (${satelliteCount.toLocaleString()} of ${satelliteTotalCount.toLocaleString()})`
+              : `Satellites (${satelliteCount.toLocaleString()})`
+            : "Satellites"}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={satelliteEnabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSatelliteToggle();
+          }}
+          className={`ml-auto relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors cursor-pointer ${
+            satelliteEnabled ? "bg-purple-500" : "bg-zinc-600"
+          }`}
+        >
+          <span
+            className={`inline-block h-3 w-3 rounded-full bg-white shadow transform transition-transform mt-0.5 ${
+              satelliteEnabled ? "translate-x-3.5 ml-0" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+        <span
+          className="h-2 w-2 rounded-full shrink-0"
+          style={{
+            backgroundColor: satelliteEnabled
+              ? satelliteCount > 0
+                ? "#22c55e"
+                : "#eab308"
+              : "#6b7280",
+          }}
+          title={
+            satelliteEnabled
+              ? satelliteCount > 0
+                ? "Data loaded"
+                : "Loading..."
+              : "Off"
+          }
+        />
+      </div>
     </div>
   );
 };

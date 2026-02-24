@@ -7,15 +7,20 @@ import { FilterBar } from "@/components/FilterBar";
 import { AircraftPanel } from "@/components/AircraftPanel";
 import { VesselPanel } from "@/components/VesselPanel";
 import { VesselFilterBar } from "@/components/VesselFilterBar";
+import { SatelliteFilterBar } from "@/components/SatelliteFilterBar";
+import { SatellitePanel } from "@/components/SatellitePanel";
 import { LayerControl } from "@/components/LayerControl";
 import { useAircraftData } from "@/hooks/useAircraftData";
 import { useVesselData } from "@/hooks/useVesselData";
+import { useSatelliteData } from "@/hooks/useSatelliteData";
 import { AircraftState } from "@/lib/types";
 import { VesselData, VesselCategory, getVesselCategory } from "@/lib/vesselTypes";
+import { SatellitePosition, SatelliteCategory } from "@/lib/satelliteTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 import { getCountryFromHex } from "@/lib/countryLookup";
 
 const VESSEL_LAYER_KEY = "overwatch-vessel-layer";
+const SATELLITE_LAYER_KEY = "overwatch-satellite-layer";
 
 const matchesSearch = (ac: AircraftState, query: string): boolean => {
   const q = query.toLowerCase();
@@ -92,11 +97,17 @@ export default function Home() {
   const [vesselEnabled, setVesselEnabled] = useState(false);
   const { vessels, status: vesselStatus } = useVesselData(vesselEnabled);
 
-  // Hydrate vessel toggle from localStorage after mount (avoids SSR mismatch)
+  const [satelliteEnabled, setSatelliteEnabled] = useState(false);
+  const { satellites } = useSatelliteData(satelliteEnabled);
+
+  // Hydrate layer toggles from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
     try {
       if (localStorage.getItem(VESSEL_LAYER_KEY) === "true") {
         setVesselEnabled(true);
+      }
+      if (localStorage.getItem(SATELLITE_LAYER_KEY) === "true") {
+        setSatelliteEnabled(true);
       }
     } catch {
       // localStorage unavailable
@@ -121,6 +132,26 @@ export default function Home() {
     }
   }, []);
 
+  const handleSatelliteToggle = useCallback(() => {
+    setSatelliteEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SATELLITE_LAYER_KEY, String(next));
+      } catch {
+        // localStorage unavailable
+      }
+      if (!next) {
+        setSelectedSatellite(null);
+        setSatelliteSignalLost(false);
+        selectedNoradRef.current = null;
+        setSatCategoryFilter("all");
+        setSatOrbitFilter("all");
+        setSatSearchQuery("");
+      }
+      return next;
+    });
+  }, []);
+
   const [selectedAircraft, setSelectedAircraft] =
     useState<AircraftState | null>(null);
   const [signalLost, setSignalLost] = useState(false);
@@ -129,6 +160,10 @@ export default function Home() {
   const [selectedVessel, setSelectedVessel] = useState<VesselData | null>(null);
   const [vesselSignalLost, setVesselSignalLost] = useState(false);
   const selectedMmsiRef = useRef<string | null>(null);
+
+  const [selectedSatellite, setSelectedSatellite] = useState<SatellitePosition | null>(null);
+  const [satelliteSignalLost, setSatelliteSignalLost] = useState(false);
+  const selectedNoradRef = useRef<number | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [altitudeFilter, setAltitudeFilter] = useState("all");
@@ -141,6 +176,10 @@ export default function Home() {
   const [vesselCategoryFilter, setVesselCategoryFilter] = useState("all");
   const [vesselSpeedFilter, setVesselSpeedFilter] = useState("all");
   const [vesselDestSearch, setVesselDestSearch] = useState("");
+
+  const [satCategoryFilter, setSatCategoryFilter] = useState<SatelliteCategory | "all">("all");
+  const [satOrbitFilter, setSatOrbitFilter] = useState<"all" | "leo" | "meo" | "geo">("all");
+  const [satSearchQuery, setSatSearchQuery] = useState("");
 
   const filteredAircraft = useMemo(() => {
     let result = aircraft;
@@ -193,6 +232,34 @@ export default function Home() {
     return result;
   }, [vessels, vesselCountryFilter, vesselCategoryFilter, vesselSpeedFilter, vesselDestSearch]);
 
+  const filteredSatellites = useMemo(() => {
+    let result = satellites;
+
+    if (satSearchQuery.trim()) {
+      const q = satSearchQuery.trim().toLowerCase();
+      result = result.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.noradId.toString().includes(q)
+      );
+    }
+
+    if (satCategoryFilter !== "all") {
+      result = result.filter((s) => s.category === satCategoryFilter);
+    }
+
+    if (satOrbitFilter !== "all") {
+      result = result.filter((s) => {
+        if (satOrbitFilter === "leo") return s.period < 128;
+        if (satOrbitFilter === "meo") return s.period >= 128 && s.period <= 720;
+        if (satOrbitFilter === "geo") return s.period > 720;
+        return true;
+      });
+    }
+
+    return result;
+  }, [satellites, satSearchQuery, satCategoryFilter, satOrbitFilter]);
+
   const aircraftCountries = useMemo(() => {
     const countrySet = new Set<string>();
     for (const ac of aircraft) {
@@ -218,10 +285,13 @@ export default function Home() {
     setSelectedAircraft(ac);
     setSignalLost(false);
     selectedHexRef.current = ac.hex;
-    // Close vessel panel
+    // Close vessel and satellite panels
     setSelectedVessel(null);
     setVesselSignalLost(false);
     selectedMmsiRef.current = null;
+    setSelectedSatellite(null);
+    setSatelliteSignalLost(false);
+    selectedNoradRef.current = null;
   }, []);
 
   const handleCloseAircraftPanel = useCallback(() => {
@@ -234,16 +304,38 @@ export default function Home() {
     setSelectedVessel(v);
     setVesselSignalLost(false);
     selectedMmsiRef.current = v.mmsi;
-    // Close aircraft panel
+    // Close aircraft and satellite panels
     setSelectedAircraft(null);
     setSignalLost(false);
     selectedHexRef.current = null;
+    setSelectedSatellite(null);
+    setSatelliteSignalLost(false);
+    selectedNoradRef.current = null;
   }, []);
 
   const handleCloseVesselPanel = useCallback(() => {
     setSelectedVessel(null);
     setVesselSignalLost(false);
     selectedMmsiRef.current = null;
+  }, []);
+
+  const handleSatelliteClick = useCallback((s: SatellitePosition) => {
+    setSelectedSatellite(s);
+    setSatelliteSignalLost(false);
+    selectedNoradRef.current = s.noradId;
+    // Close aircraft and vessel panels (mutual exclusivity)
+    setSelectedAircraft(null);
+    setSignalLost(false);
+    selectedHexRef.current = null;
+    setSelectedVessel(null);
+    setVesselSignalLost(false);
+    selectedMmsiRef.current = null;
+  }, []);
+
+  const handleCloseSatellitePanel = useCallback(() => {
+    setSelectedSatellite(null);
+    setSatelliteSignalLost(false);
+    selectedNoradRef.current = null;
   }, []);
 
   // Update selected aircraft data when new poll results arrive
@@ -273,6 +365,19 @@ export default function Home() {
     }
   }, [vessels]);
 
+  // Update selected satellite data on each propagation cycle
+  useEffect(() => {
+    if (selectedNoradRef.current === null) return;
+
+    const updated = satellites.find((s) => s.noradId === selectedNoradRef.current);
+    if (updated) {
+      setSelectedSatellite(updated);
+      setSatelliteSignalLost(false);
+    } else {
+      setSatelliteSignalLost(true);
+    }
+  }, [satellites]);
+
   return (
     <main className="relative flex h-screen w-screen flex-col">
       <StatusBar
@@ -282,6 +387,8 @@ export default function Home() {
         error={error}
         vesselEnabled={vesselEnabled}
         vesselCount={filteredVessels.length}
+        satelliteEnabled={satelliteEnabled}
+        satelliteCount={filteredSatellites.length}
       />
       <FilterBar
         searchQuery={searchQuery}
@@ -313,6 +420,18 @@ export default function Home() {
           countries={vesselCountries}
         />
       )}
+      {satelliteEnabled && (
+        <SatelliteFilterBar
+          categoryFilter={satCategoryFilter}
+          onCategoryFilterChange={setSatCategoryFilter}
+          orbitFilter={satOrbitFilter}
+          onOrbitFilterChange={setSatOrbitFilter}
+          searchQuery={satSearchQuery}
+          onSearchQueryChange={setSatSearchQuery}
+          filteredCount={filteredSatellites.length}
+          totalCount={satellites.length}
+        />
+      )}
       {/* Error banner — non-blocking, shows below filter bar */}
       {error && !loading && (
         <div className="flex items-center gap-2 bg-red-900/70 px-4 py-1.5 text-xs text-red-200">
@@ -333,6 +452,9 @@ export default function Home() {
           onAircraftClick={handleAircraftClick}
           vessels={vesselEnabled ? filteredVessels : []}
           onVesselClick={handleVesselClick}
+          satellites={satelliteEnabled ? filteredSatellites : []}
+          onSatelliteClick={handleSatelliteClick}
+          satelliteLayerEnabled={satelliteEnabled}
         />
         {/* Loading overlay */}
         {loading && (
@@ -364,6 +486,11 @@ export default function Home() {
           onClose={handleCloseVesselPanel}
           signalLost={vesselSignalLost}
         />
+        <SatellitePanel
+          satellite={selectedSatellite}
+          onClose={handleCloseSatellitePanel}
+          signalLost={satelliteSignalLost}
+        />
         <LayerControl
           aircraftCount={filteredAircraft.length}
           vesselEnabled={vesselEnabled}
@@ -371,6 +498,10 @@ export default function Home() {
           vesselCount={filteredVessels.length}
           vesselTotalCount={vessels.length}
           vesselStatus={vesselStatus}
+          satelliteEnabled={satelliteEnabled}
+          onSatelliteToggle={handleSatelliteToggle}
+          satelliteCount={filteredSatellites.length}
+          satelliteTotalCount={satellites.length}
         />
       </div>
     </main>

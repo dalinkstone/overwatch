@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { AircraftState } from "@/lib/types";
 import { VesselData } from "@/lib/vesselTypes";
+import { SatellitePosition } from "@/lib/satelliteTypes";
 
 const Map = dynamic(() => import("./Map"), {
   ssr: false,
@@ -18,10 +19,29 @@ interface MapWrapperProps {
   onAircraftClick: (aircraft: AircraftState) => void;
   vessels?: VesselData[];
   onVesselClick?: (vessel: VesselData) => void;
+  satellites?: SatellitePosition[];
+  onSatelliteClick?: (satellite: SatellitePosition) => void;
+  satelliteLayerEnabled?: boolean;
 }
 
-export const MapWrapper = ({ aircraft, onAircraftClick, vessels, onVesselClick }: MapWrapperProps) => {
+export const MapWrapper = ({
+  aircraft,
+  onAircraftClick,
+  vessels,
+  onVesselClick,
+  satellites,
+  onSatelliteClick,
+  satelliteLayerEnabled,
+}: MapWrapperProps) => {
   return (
-    <Map aircraft={aircraft} onAircraftClick={onAircraftClick} vessels={vessels} onVesselClick={onVesselClick} />
+    <Map
+      aircraft={aircraft}
+      onAircraftClick={onAircraftClick}
+      vessels={vessels}
+      onVesselClick={onVesselClick}
+      satellites={satellites}
+      onSatelliteClick={onSatelliteClick}
+      satelliteLayerEnabled={satelliteLayerEnabled}
+    />
   );
 };
