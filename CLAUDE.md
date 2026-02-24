@@ -4,10 +4,29 @@
 
 Overwatch is a real-time military aircraft tracker using ADSB.lol's free public API and Leaflet.js maps. It is a Next.js 14 App Router project in TypeScript with Tailwind CSS.
 
+## Current Implementation Status
+
+- **Phase 1 (Scaffold):** Complete — project structure, dependencies, configuration
+- **Phase 2 (Types & API Utility Layer):** Complete — TypeScript interfaces, helper functions, API client
+
+### What's Implemented
+
+| File | Status | Description |
+|---|---|---|
+| `src/lib/types.ts` | Done | `AircraftState`, `AircraftResponse` interfaces; `hasPosition`, `isMilitary` guards |
+| `src/lib/utils.ts` | Done | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` helpers |
+| `src/lib/api.ts` | Done | `fetchMilitaryAircraft` — fetches from local proxy with validation |
+| `src/app/api/aircraft/route.ts` | Placeholder | Returns `{ status: "ok" }` — needs full proxy implementation (Phase 3) |
+| `src/app/layout.tsx` | Done | Root layout with metadata and globals.css import |
+| `src/app/page.tsx` | Placeholder | Renders `<h1>Overwatch</h1>` — needs map integration (Phase 5-6) |
+| `src/components/` | Empty | Map, AircraftMarker, StatusBar, etc. not yet created |
+| `src/hooks/` | Empty | useAircraftData polling hook not yet created |
+
 ## Commands
 
 - `npm run dev` — Start dev server on port 3000
 - `npm run build` — Production build
+- `npm run start` — Start production server
 - `npm run lint` — Run ESLint
 - `npm run type-check` — Run `tsc --noEmit`
 
@@ -42,10 +61,28 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 
 - Base URL: `https://api.adsb.lol`
 - Military endpoint: `GET /v2/mil` — returns `{ ac: AircraftState[], msg: string, now: number, total: number, ctime: number, ptime: number }`
-- Each aircraft object has: `hex`, `flight`, `lat`, `lon`, `alt_baro`, `gs`, `track`, `t` (type code), `r` (registration), `dbFlags`, `squawk`, `seen`, `seen_pos`
+- Each aircraft object has: `hex`, `flight`, `lat`, `lon`, `alt_baro`, `alt_geom`, `gs`, `track`, `t` (type code), `r` (registration), `dbFlags`, `squawk`, `seen`, `seen_pos`, `category`
 - Military flag: `(aircraft.dbFlags & 1) !== 0`
 - No auth required. No rate limit currently enforced, but poll no faster than every 10 seconds.
 - Fallback: `https://api.adsb.one` uses identical endpoints.
+
+### TypeScript Types (src/lib/types.ts)
+
+- `AircraftState` — interface for a single aircraft with all fields from `/v2/mil`. Position/telemetry fields are optional since not all aircraft broadcast all fields.
+- `AircraftResponse` — interface for the top-level API response containing `ac[]`, `msg`, `now`, `total`, `ctime`, `ptime`.
+- `hasPosition(aircraft)` — returns `true` only when both `lat` and `lon` are defined numbers.
+- `isMilitary(aircraft)` — returns `true` when `(dbFlags & 1) !== 0`.
+
+### Utility Functions (src/lib/utils.ts)
+
+- `formatAltitude(alt)` — `"Ground"` | `"N/A"` | `"12,500 ft"`
+- `formatSpeed(gs)` — `"N/A"` | `"450 kts"`
+- `formatCallsign(flight)` — trims whitespace, returns `"UNKNOWN"` if empty
+- `getAircraftLabel(ac)` — callsign > registration > hex code
+
+### API Client (src/lib/api.ts)
+
+- `fetchMilitaryAircraft()` — fetches from `/api/aircraft` (local proxy), validates the response shape, throws on HTTP errors or malformed data.
 
 ### Leaflet Map
 
