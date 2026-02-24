@@ -30,11 +30,12 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 | `src/app/layout.tsx` | Done | Root layout with metadata ("Overwatch — Military Movement Tracker"), favicon, globals.css import |
 | `src/app/icon.svg` | Done | SVG favicon — amber aircraft silhouette on dark background |
 | `src/app/page.tsx` | Done | Client component with useAircraftData, useVesselData, StatusBar, FilterBar, MapWrapper, AircraftPanel, vessel layer toggle, loading/error/empty overlays |
-| `src/lib/aircraftIcons.ts` | Done | `AircraftCategory` type, `AIRCRAFT_TYPE_MAP`, `getAircraftCategory()`, `ICON_SIZES`, `getAircraftIconSvg()`, `getCategoryLabel()` |
-| `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with category-specific DivIcon SVG silhouettes, altitude-based coloring, track rotation, popup with category badge |
-| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders `AircraftMarker` + `VesselMarker` for each positioned entity, includes ADSB.lol attribution |
+| `src/lib/aircraftIcons.ts` | Done | `AircraftCategory` type, `AIRCRAFT_TYPE_MAP`, `getAircraftCategory()`, `ICON_SIZES`, `getAircraftIconSvg()`, `getCategoryLabel()` — SVG icons sourced from ADS-B Radar |
+| `src/lib/countryLookup.ts` | Done | ICAO hex-to-country lookup (170+ ranges), `getCountryFromHex()`, `countryCodeToFlag()` emoji converter |
+| `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with category-specific DivIcon SVG silhouettes, altitude-based coloring, track rotation, popup with country flag + category badge |
+| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders `AircraftMarker` + `VesselMarker` for each positioned entity, includes ADSB.lol + ADS-B Radar attribution |
 | `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
-| `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel — right sidebar on desktop, bottom sheet on mobile (<768px), signal lost indicator, category badge |
+| `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel — right sidebar on desktop, bottom sheet on mobile (<768px), signal lost indicator, country flag badge, category badge |
 | `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, last updated time, connection status with colored indicator |
 | `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by hasPosition, preserves data on failure |
 | `src/components/FilterBar.tsx` | Done | Search (callsign/reg/hex/type), altitude band filter, category filter, aircraft count, vessel layer toggle — responsive (full-width search on mobile) |
@@ -104,20 +105,20 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 
 ### Aircraft Icon Classification System (Phase 8)
 
-Aircraft are categorized by ICAO type code (`t` field) into visual categories, each with a distinct SVG silhouette icon.
+Aircraft are categorized by ICAO type code (`t` field) into visual categories, each with a distinct SVG silhouette icon sourced from the [ADS-B Radar](https://adsb-radar.com) icon set (free for personal/commercial use with attribution).
 
 #### Aircraft Categories
 
-| Category | Icon Shape | Example Types | Color Scheme |
-|---|---|---|---|
-| `fighter` | Swept-wing jet silhouette (narrow, aggressive) | F16, F15, F22, F35, A10, FA18, EF2K, TORN, SU27, F14, RFAL | Same altitude-based coloring |
-| `tanker-transport` | Straight-wing transport (wide, heavy) | KC135, K35R, KC46, C17, C5M, C130, C30J, A400, AN124, C145 | Same altitude-based coloring |
-| `helicopter` | Rotor disc circle + fuselage + tail boom | UH60, AH64, CH47, V22, H60, H64, EC45, EC35, S70, A109 | Same altitude-based coloring |
-| `surveillance` | Transport with radome disc on fuselage | E3, E8, E6, RC135, P8, U2, E2, EA18G, JSTAR, MC12, E11A | Same altitude-based coloring |
-| `trainer` | Small simple straight-wing (smallest icon) | T38, T6, T45, PC12, T7, PC21, PC7, PC9 | Same altitude-based coloring |
-| `bomber` | Large swept-wing (widest, heaviest icon) | B52, B1, B2, B21 | Same altitude-based coloring |
-| `uav` | Long thin wings, tiny body, V-tail | RQ4, MQ9, MQ1, MQ4, HRON, MQ25, XQ58 | Same altitude-based coloring |
-| `unknown` | Generic moderate aircraft (fallback) | Anything not matched | Same altitude-based coloring |
+| Category | ADS-B Radar Icon | Icon Shape | Example Types | Color Scheme |
+|---|---|---|---|---|
+| `fighter` | `a6` | Delta-wing high-performance jet | F16, F15, F22, F35, A10, FA18, EF2K, TORN, SU27, F14, RFAL | Altitude-based coloring |
+| `tanker-transport` | `c130` | 4-engine military transport | KC135, K35R, KC46, C17, C5M, C130, C30J, A400, AN124, C145 | Altitude-based coloring |
+| `helicopter` | `a7` | Rotorcraft with rotor disc blades | UH60, AH64, CH47, V22, H60, H64, EC45, EC35, S70, A109 | Altitude-based coloring |
+| `surveillance` | `a5` | Heavy 4-engine aircraft | E3, E8, E6, RC135, P8, U2, E2, EA18G, JSTAR, MC12, E11A | Altitude-based coloring |
+| `trainer` | `cessna` | Small general aviation prop | T38, T6, T45, PC12, T7, PC21, PC7, PC9 | Altitude-based coloring |
+| `bomber` | `b747` | Large 4-engine heavy aircraft | B52, B1, B2, B21 | Altitude-based coloring |
+| `uav` | `a1` | Light aircraft silhouette | RQ4, MQ9, MQ1, MQ4, HRON, MQ25, XQ58 | Altitude-based coloring |
+| `unknown` | `a3` | Generic jet airliner | Anything not matched | Altitude-based coloring |
 
 #### Type Code Mapping (`src/lib/aircraftIcons.ts`)
 
@@ -139,6 +140,27 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 | `bomber` | 44×44 | 22×22 |
 | `uav` | 32×32 | 16×16 |
 | `unknown` | 34×34 | 17×17 |
+
+### Country Identification (src/lib/countryLookup.ts)
+
+Aircraft country of registration is determined from the ICAO 24-bit hex address (`hex` field). The ICAO address space is divided into country-specific ranges by ICAO Annex 10 Vol III. The lookup table contains 170+ ranges covering all ICAO member states (sourced from the tar1090 project, MIT license).
+
+- `getCountryFromHex(hex: string): { country: string; code: string } | null` — returns the most specific match (narrowest range) when sub-ranges overlap (e.g., Hong Kong within China, Bermuda within UK)
+- `countryCodeToFlag(code: string): string` — converts ISO 3166-1 alpha-2 code to emoji flag using Unicode Regional Indicator Symbols
+
+Country flags are displayed in the AircraftMarker popup and AircraftPanel detail view. The flag is derived entirely from the hex code — no additional API calls needed.
+
+### Attribution
+
+| Resource | Usage | License/Terms |
+|---|---|---|
+| OpenStreetMap | Map tiles | ODbL |
+| ADSB.lol | Aircraft ADS-B data | ODbL |
+| ADS-B Radar | Aircraft SVG icon silhouettes | Free with attribution — [adsb-radar.com](https://adsb-radar.com) |
+| Digitraffic | AIS vessel data | Open data (CC BY 4.0) |
+| tar1090 | ICAO hex-to-country range data | MIT |
+
+Attribution is displayed in the map tile layer: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar`
 
 ### TypeScript Types (src/lib/types.ts)
 
@@ -170,7 +192,7 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 ### Leaflet Map
 
 - Tile URL: `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`
-- Attribution: `© OpenStreetMap contributors | Data: ADSB.lol contributors (ODbL)`
+- Attribution: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar`
 - Map is created using vanilla Leaflet (`L.map`, `L.tileLayer`) — not react-leaflet components
 - Leaflet CSS must be imported: `import 'leaflet/dist/leaflet.css'`
 - Custom plane icon using Leaflet's `DivIcon` with inline SVG rotated by the aircraft's `track` heading
@@ -183,7 +205,7 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
   - SVG rotated by `aircraft.track` degrees via CSS `transform: rotate()`
   - Icon size varies by category (see Icon Size Rules above)
   - Altitude-based coloring: green (`#22c55e`) for ground, blue (`#3b82f6`) for < 10,000 ft, red (`#ef4444`) for >= 10,000 ft
-  - Popup displays: formatted callsign, type code, registration, altitude, speed, category badge
+  - Popup displays: formatted callsign, country flag emoji + country name, type code, registration, altitude, speed, category badge
 - **VesselMarker.tsx** — `React.memo`'d client component receiving `VesselState` + `map`
   - Uses `L.DivIcon` with inline SVG ship silhouette (top-down, pointed bow)
   - SVG rotated by `vessel.heading` (falls back to `vessel.cog`, then 0)
@@ -192,7 +214,7 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
   - Popup displays: vessel name, MMSI, type code, speed, destination, callsign
 - **Map.tsx** — `"use client"` component importing Leaflet CSS, creates map via `L.map` + `L.tileLayer`, renders `AircraftMarker` per positioned aircraft (keyed by `hex`) and `VesselMarker` per positioned vessel (keyed by `mmsi`)
   - Map center/zoom read from env vars with defaults (38.9, -77.0, zoom 5)
-  - Attribution includes both OpenStreetMap and ADSB.lol
+  - Attribution includes OpenStreetMap, ADSB.lol, and ADS-B Radar
   - Accepts optional `vessels` prop — aircraft markers and vessel markers rendered independently
 - **MapWrapper.tsx** — uses `next/dynamic` to import `Map` with `{ ssr: false }`, shows "Loading map..." placeholder
   - This is what `page.tsx` renders — never import `Map.tsx` directly from a server component
@@ -262,7 +284,7 @@ Intentionally large for instant visual recognition at map zoom levels 4-8. Each 
 - **Mobile (<768px):** Slide-up bottom sheet (full width, 60vh height, rounded top corners)
 - Props: `aircraft` (AircraftState | null), `onClose` callback, `signalLost` boolean
 - When `aircraft` is null, panel slides off-screen via CSS transition
-- Displays: callsign (bold header), ICAO hex, registration, type code, altitude, speed, heading, squawk, lat/lon (4 decimal places), last seen time, military badge, **aircraft category badge**
+- Displays: callsign (bold header), ICAO hex, registration, type code, altitude, speed, heading, squawk, lat/lon (4 decimal places), last seen time, military badge, **country flag badge** (flag emoji + country name from ICAO hex lookup), **aircraft category badge**
 - Close button (X) in top-right corner
 - "Signal lost" indicator (red badge with pulse animation) when aircraft disappears from data
 - Absolutely positioned overlaying the map at `z-[1000]`

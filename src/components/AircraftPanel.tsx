@@ -3,6 +3,7 @@
 import { AircraftState } from "@/lib/types";
 import { formatAltitude, formatSpeed, formatCallsign } from "@/lib/utils";
 import { getAircraftCategory, getCategoryLabel } from "@/lib/aircraftIcons";
+import { getCountryFromHex, countryCodeToFlag } from "@/lib/countryLookup";
 
 interface AircraftPanelProps {
   aircraft: AircraftState | null;
@@ -88,6 +89,20 @@ export const AircraftPanel = ({
               Military
             </span>
           </div>
+
+          {/* Country */}
+          {(() => {
+            const countryInfo = getCountryFromHex(aircraft.hex);
+            if (!countryInfo) return null;
+            return (
+              <div className="mb-4">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-700/50 px-3 py-1 text-sm">
+                  <span className="text-base leading-none">{countryCodeToFlag(countryInfo.code)}</span>
+                  <span className="text-zinc-200">{countryInfo.country}</span>
+                </span>
+              </div>
+            );
+          })()}
 
           {/* Details */}
           <div className="space-y-3">

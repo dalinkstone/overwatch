@@ -14,6 +14,7 @@ import {
   getCategoryLabel,
   ICON_SIZES,
 } from "@/lib/aircraftIcons";
+import { getCountryFromHex, countryCodeToFlag } from "@/lib/countryLookup";
 
 interface AircraftMarkerProps {
   aircraft: AircraftState;
@@ -60,8 +61,15 @@ const AircraftMarkerComponent = ({ aircraft, onClick, map }: AircraftMarkerProps
     const category = getAircraftCategory(aircraft.t);
     const categoryLabel = getCategoryLabel(category);
 
+    const countryInfo = getCountryFromHex(aircraft.hex);
+    const flagEmoji = countryInfo ? countryCodeToFlag(countryInfo.code) : "";
+    const countryLine = countryInfo
+      ? `<div>${flagEmoji} ${countryInfo.country}</div>`
+      : "";
+
     const popupContent = `<div style="font-size:13px;line-height:1.5">
       <div style="font-weight:bold;font-size:14px">${formatCallsign(aircraft.flight)}</div>
+      ${countryLine}
       ${aircraft.t ? `<div>Type: ${aircraft.t}</div>` : ""}
       <div>Category: ${categoryLabel}</div>
       ${aircraft.r ? `<div>Reg: ${aircraft.r}</div>` : ""}
