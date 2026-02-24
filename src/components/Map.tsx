@@ -4,11 +4,15 @@ import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import { AircraftState, hasPosition } from "@/lib/types";
+import { VesselData } from "@/lib/vesselTypes";
 import { AircraftMarker } from "./AircraftMarker";
+import { VesselMarker } from "./VesselMarker";
 
 interface MapProps {
   aircraft: AircraftState[];
   onAircraftClick: (aircraft: AircraftState) => void;
+  vessels?: VesselData[];
+  onVesselClick?: (vessel: VesselData) => void;
 }
 
 const DEFAULT_CENTER: [number, number] = [
@@ -20,7 +24,9 @@ const DEFAULT_ZOOM = parseInt(
   10
 );
 
-const Map = ({ aircraft, onAircraftClick }: MapProps) => {
+const VESSEL_PANE = "vessels";
+
+const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick }: MapProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -38,6 +44,8 @@ const Map = ({ aircraft, onAircraftClick }: MapProps) => {
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Data: <a href="https://www.adsb.lol/">ADSB.lol</a> (ODbL) | Icons: <a href="https://adsb-radar.com">ADS-B Radar</a>',
     }).addTo(map);
 
+    map.createPane(VESSEL_PANE).style.zIndex = "450";
+
     mapRef.current = map;
     setMapReady(true);
 
@@ -47,6 +55,8 @@ const Map = ({ aircraft, onAircraftClick }: MapProps) => {
       setMapReady(false);
     };
   }, []);
+
+  const handleVesselClick = onVesselClick ?? (() => {});
 
   return (
     <div ref={containerRef} style={{ height: "100%", width: "100%" }}>
@@ -58,6 +68,17 @@ const Map = ({ aircraft, onAircraftClick }: MapProps) => {
             aircraft={ac}
             onClick={onAircraftClick}
             map={mapRef.current!}
+          />
+        ))}
+      {mapReady &&
+        mapRef.current &&
+        vessels?.map((v) => (
+          <VesselMarker
+            key={v.mmsi}
+            vessel={v}
+            onClick={handleVesselClick}
+            map={mapRef.current!}
+            pane={VESSEL_PANE}
           />
         ))}
     </div>
