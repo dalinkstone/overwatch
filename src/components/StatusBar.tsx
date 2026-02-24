@@ -5,6 +5,8 @@ interface StatusBarProps {
   positionCount: number;
   lastUpdated: Date | null;
   error: string | null;
+  vesselEnabled?: boolean;
+  vesselCount?: number;
 }
 
 const formatTime = (date: Date): string => {
@@ -21,6 +23,8 @@ export const StatusBar = ({
   positionCount,
   lastUpdated,
   error,
+  vesselEnabled,
+  vesselCount,
 }: StatusBarProps) => {
   return (
     <div className="flex items-center justify-between bg-zinc-900 px-4 py-2.5 text-xs text-white">
@@ -56,6 +60,15 @@ export const StatusBar = ({
           <span className="text-zinc-500">Tracked:</span>{" "}
           <span className="font-mono">{positionCount}</span>
         </span>
+        {vesselEnabled && vesselCount !== undefined && (
+          <>
+            <span className="text-zinc-600">|</span>
+            <span>
+              <span className="text-zinc-500">Vessels:</span>{" "}
+              <span className="font-mono">{vesselCount.toLocaleString()}</span>
+            </span>
+          </>
+        )}
       </div>
 
       {/* Right: Update time + connection status */}

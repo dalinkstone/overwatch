@@ -13,6 +13,7 @@ interface LayerControlProps {
   vesselEnabled: boolean;
   onVesselToggle: (enabled: boolean) => void;
   vesselCount: number;
+  vesselTotalCount?: number;
   vesselStatus: VesselStatus;
 }
 
@@ -42,6 +43,7 @@ export const LayerControl = ({
   vesselEnabled,
   onVesselToggle,
   vesselCount,
+  vesselTotalCount,
   vesselStatus,
 }: LayerControlProps) => {
   const isDisabled = vesselStatus.state === "disabled";
@@ -86,7 +88,9 @@ export const LayerControl = ({
         </svg>
         <span className="text-xs text-zinc-200">
           {vesselEnabled && !isDisabled
-            ? `Vessels (${vesselCount.toLocaleString()})`
+            ? vesselTotalCount !== undefined && vesselCount !== vesselTotalCount
+              ? `Vessels (${vesselCount.toLocaleString()} of ${vesselTotalCount.toLocaleString()})`
+              : `Vessels (${vesselCount.toLocaleString()})`
             : "Vessels"}
         </span>
         <button

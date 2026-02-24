@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useRef } from "react";
 import L from "leaflet";
-import { VesselData, getVesselCategory, VESSEL_COLORS } from "@/lib/vesselTypes";
+import { VesselData, getVesselCategory, VESSEL_COLORS, VESSEL_CATEGORY_LABELS } from "@/lib/vesselTypes";
 
 interface VesselMarkerProps {
   vessel: VesselData;
@@ -21,17 +21,6 @@ const getVesselRotation = (vessel: VesselData): number => {
   return vessel.cog;
 };
 
-const CATEGORY_LABELS: Record<string, string> = {
-  military: "Military",
-  cargo: "Cargo",
-  tanker: "Tanker",
-  passenger: "Passenger",
-  fishing: "Fishing",
-  tug: "Tug/Pilot",
-  highspeed: "High-Speed Craft",
-  pleasure: "Pleasure Craft",
-  other: "Other",
-};
 
 const createVesselIcon = (
   vessel: VesselData,
@@ -66,7 +55,7 @@ const formatHeading = (heading: number): string => {
 const buildPopupContent = (vessel: VesselData): string => {
   const name = vessel.name.trim() || "Unknown Vessel";
   const category = getVesselCategory(vessel.shipType);
-  const categoryLabel = CATEGORY_LABELS[category] ?? "Other";
+  const categoryLabel = VESSEL_CATEGORY_LABELS[category] ?? "Other";
   const speed = `${vessel.sog.toFixed(1)} kts`;
   const course = `${Math.round(vessel.cog)}°`;
   const heading = formatHeading(vessel.heading);

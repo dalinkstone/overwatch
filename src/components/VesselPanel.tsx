@@ -1,6 +1,6 @@
 "use client";
 
-import { VesselData, getVesselCategory } from "@/lib/vesselTypes";
+import { VesselData, getVesselCategory, VESSEL_CATEGORY_LABELS } from "@/lib/vesselTypes";
 
 interface VesselPanelProps {
   vessel: VesselData | null;
@@ -8,17 +8,6 @@ interface VesselPanelProps {
   signalLost: boolean;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  military: "Military",
-  cargo: "Cargo",
-  tanker: "Tanker",
-  passenger: "Passenger",
-  fishing: "Fishing",
-  tug: "Tug/Pilot",
-  highspeed: "High-Speed Craft",
-  pleasure: "Pleasure Craft",
-  other: "Other",
-};
 
 const MILITARY_CATEGORY_LABELS: Record<string, string> = {
   warship: "Warship",
@@ -119,7 +108,7 @@ export const VesselPanel = ({
           <div className="space-y-3">
             <DetailRow
               label="Type"
-              value={`${CATEGORY_LABELS[getVesselCategory(vessel.shipType)] ?? "Other"} (${vessel.shipType})`}
+              value={`${VESSEL_CATEGORY_LABELS[getVesselCategory(vessel.shipType)] ?? "Other"} (${vessel.shipType})`}
             />
             <DetailRow
               label="Speed"

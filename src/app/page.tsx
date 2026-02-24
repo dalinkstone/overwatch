@@ -6,11 +6,12 @@ import { StatusBar } from "@/components/StatusBar";
 import { FilterBar } from "@/components/FilterBar";
 import { AircraftPanel } from "@/components/AircraftPanel";
 import { VesselPanel } from "@/components/VesselPanel";
+import { VesselFilterBar } from "@/components/VesselFilterBar";
 import { LayerControl } from "@/components/LayerControl";
 import { useAircraftData } from "@/hooks/useAircraftData";
 import { useVesselData } from "@/hooks/useVesselData";
 import { AircraftState } from "@/lib/types";
-import { VesselData } from "@/lib/vesselTypes";
+import { VesselData, VesselCategory, getVesselCategory } from "@/lib/vesselTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 
 const VESSEL_LAYER_KEY = "overwatch-vessel-layer";
@@ -74,6 +75,8 @@ export default function Home() {
       setSelectedVessel(null);
       setVesselSignalLost(false);
       selectedMmsiRef.current = null;
+      setVesselCountryFilter("all");
+      setVesselCategoryFilter("all");
     }
   }, []);
 
@@ -89,6 +92,9 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [altitudeFilter, setAltitudeFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+
+  const [vesselCountryFilter, setVesselCountryFilter] = useState("all");
+  const [vesselCategoryFilter, setVesselCategoryFilter] = useState("all");
 
   const filteredAircraft = useMemo(() => {
     let result = aircraft;
@@ -107,6 +113,33 @@ export default function Home() {
 
     return result;
   }, [aircraft, searchQuery, altitudeFilter, categoryFilter]);
+
+  const filteredVessels = useMemo(() => {
+    let result = vessels;
+
+    if (vesselCountryFilter !== "all") {
+      result = result.filter((v) => v.flag === vesselCountryFilter);
+    }
+
+    if (vesselCategoryFilter !== "all") {
+      result = result.filter((v) => {
+        if (vesselCategoryFilter === "military") return v.isMilitary;
+        return getVesselCategory(v.shipType) === (vesselCategoryFilter as VesselCategory);
+      });
+    }
+
+    return result;
+  }, [vessels, vesselCountryFilter, vesselCategoryFilter]);
+
+  const vesselCountries = useMemo(() => {
+    const countrySet = new Set<string>();
+    for (const v of vessels) {
+      if (v.flag && v.flag !== "Unknown") {
+        countrySet.add(v.flag);
+      }
+    }
+    return Array.from(countrySet).sort();
+  }, [vessels]);
 
   const handleAircraftClick = useCallback((ac: AircraftState) => {
     setSelectedAircraft(ac);
@@ -174,6 +207,8 @@ export default function Home() {
         positionCount={aircraft.length}
         lastUpdated={lastUpdated}
         error={error}
+        vesselEnabled={vesselEnabled}
+        vesselCount={filteredVessels.length}
       />
       <FilterBar
         searchQuery={searchQuery}
@@ -185,6 +220,17 @@ export default function Home() {
         filteredCount={filteredAircraft.length}
         totalCount={aircraft.length}
       />
+      {vesselEnabled && (
+        <VesselFilterBar
+          countryFilter={vesselCountryFilter}
+          onCountryFilterChange={setVesselCountryFilter}
+          categoryFilter={vesselCategoryFilter}
+          onCategoryFilterChange={setVesselCategoryFilter}
+          filteredCount={filteredVessels.length}
+          totalCount={vessels.length}
+          countries={vesselCountries}
+        />
+      )}
       {/* Error banner — non-blocking, shows below filter bar */}
       {error && !loading && (
         <div className="flex items-center gap-2 bg-red-900/70 px-4 py-1.5 text-xs text-red-200">
@@ -203,7 +249,7 @@ export default function Home() {
         <MapWrapper
           aircraft={filteredAircraft}
           onAircraftClick={handleAircraftClick}
-          vessels={vesselEnabled ? vessels : []}
+          vessels={vesselEnabled ? filteredVessels : []}
           onVesselClick={handleVesselClick}
         />
         {/* Loading overlay */}
@@ -240,7 +286,8 @@ export default function Home() {
           aircraftCount={filteredAircraft.length}
           vesselEnabled={vesselEnabled}
           onVesselToggle={handleVesselToggle}
-          vesselCount={vessels.length}
+          vesselCount={filteredVessels.length}
+          vesselTotalCount={vessels.length}
           vesselStatus={vesselStatus}
         />
       </div>

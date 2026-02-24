@@ -33,16 +33,17 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 | `src/lib/aircraftIcons.ts` | Done | `AircraftCategory` type, `AIRCRAFT_TYPE_MAP`, `getAircraftCategory()`, `ICON_SIZES`, `getAircraftIconSvg()`, `getCategoryLabel()` — SVG icons sourced from ADS-B Radar |
 | `src/lib/countryLookup.ts` | Done | ICAO hex-to-country lookup (170+ ranges), `getCountryFromHex()`, `countryCodeToFlag()` emoji converter |
 | `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with category-specific DivIcon SVG silhouettes, altitude-based coloring, track rotation, popup with country flag + category badge |
-| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders `AircraftMarker` for each positioned aircraft, includes ADSB.lol + ADS-B Radar attribution |
+| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders `AircraftMarker` for each positioned aircraft, viewport-filtered vessel rendering with zoom gate (zoom >= 4), includes ADSB.lol + ADS-B Radar + aisstream.io attribution |
 | `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
 | `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel — right sidebar on desktop, bottom sheet on mobile (<768px), signal lost indicator, country flag badge, category badge |
-| `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, last updated time, connection status with colored indicator |
+| `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, vessel count (when layer active), last updated time, connection status with colored indicator |
 | `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by hasPosition, preserves data on failure |
 | `src/components/FilterBar.tsx` | Done | Search (callsign/reg/hex/type), altitude band filter, category filter, aircraft count — responsive (full-width search on mobile) |
 | `eslint.config.mjs` | Done | ESLint 10 flat config with `@eslint/js` + `typescript-eslint` |
 | `src/lib/env.ts` | Done | `getAisStreamApiKey()`, `isVesselTrackingEnabled()` — server-side only environment helpers |
-| `src/lib/vesselTypes.ts` | Done | `VesselData` interface, `VesselCategory` type, `getVesselCategory()`, `getMIDFromMMSI()`, `getCountryFromMID()` (MID lookup for 60+ nations), `identifyMilitaryVessel()` (type code + name pattern + MMSI heuristics), `VESSEL_COLORS` |
+| `src/lib/vesselTypes.ts` | Done | `VesselData` interface, `VesselCategory` type, `getVesselCategory()`, `getMIDFromMMSI()`, `getCountryFromMID()` (MID lookup for 60+ nations), `identifyMilitaryVessel()` (type code + name pattern + MMSI heuristics), `VESSEL_COLORS`, `VESSEL_CATEGORY_LABELS` |
 | `src/lib/aisStreamManager.ts` | Done | Singleton server-side WebSocket manager for aisstream.io — `initAisStream()`, `getVessels()`, `getConnectionStatus()`; handles reconnection, staleness cleanup, message parsing |
+| `src/components/VesselFilterBar.tsx` | Done | Vessel layer filter bar — country/flag dropdown (dynamically populated), vessel type/category dropdown, vessel count display, blue accent styling |
 
 ### What's Planned
 
@@ -156,8 +157,9 @@ Country flags are displayed in the AircraftMarker popup and AircraftPanel detail
 | ADSB.lol | Aircraft ADS-B data | ODbL |
 | ADS-B Radar | Aircraft SVG icon silhouettes | Free with attribution — [adsb-radar.com](https://adsb-radar.com) |
 | tar1090 | ICAO hex-to-country range data | MIT |
+| aisstream.io | AIS vessel tracking data | Free API key |
 
-Attribution is displayed in the map tile layer: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar`
+Attribution is displayed in the map tile layer: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io`
 
 ### TypeScript Types (src/lib/types.ts)
 
@@ -189,7 +191,7 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 ### Leaflet Map
 
 - Tile URL: `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`
-- Attribution: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar`
+- Attribution: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io`
 - Map is created using vanilla Leaflet (`L.map`, `L.tileLayer`) — not react-leaflet components
 - Leaflet CSS must be imported: `import 'leaflet/dist/leaflet.css'`
 - Custom plane icon using Leaflet's `DivIcon` with inline SVG rotated by the aircraft's `track` heading
@@ -205,7 +207,9 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
   - Popup displays: formatted callsign, country flag emoji + country name, type code, registration, altitude, speed, category badge
 - **Map.tsx** — `"use client"` component importing Leaflet CSS, creates map via `L.map` + `L.tileLayer`, renders `AircraftMarker` per positioned aircraft (keyed by `hex`)
   - Map center/zoom read from env vars with defaults (38.9, -77.0, zoom 5)
-  - Attribution includes OpenStreetMap, ADSB.lol, and ADS-B Radar
+  - Attribution includes OpenStreetMap, ADSB.lol, ADS-B Radar, and aisstream.io
+  - Viewport filtering: tracks map bounds via `moveend`/`zoomend` events, only renders vessels within the current viewport for performance with 2000+ markers
+  - Zoom gate: vessel markers only render at zoom >= 4; shows "Zoom in to see vessels" notice when zoomed out
 - **MapWrapper.tsx** — uses `next/dynamic` to import `Map` with `{ ssr: false }`, shows "Loading map..." placeholder
   - This is what `page.tsx` renders — never import `Map.tsx` directly from a server component
 
@@ -246,6 +250,15 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - **Count display:** "Showing X of Y military aircraft" (hidden on mobile)
 - **Responsive:** search input full-width on mobile (<768px), dropdowns flex to fill row
 
+### VesselFilterBar (src/components/VesselFilterBar.tsx)
+
+- Dark background (`zinc-800`), appears below aircraft FilterBar when vessel layer is enabled
+- Blue accent color (`blue-400`) with ship icon + "Vessels" label to distinguish from aircraft filters
+- **Country/flag filter:** dynamically populated dropdown from live vessel data (only countries with currently tracked vessels)
+- **Category filter:** All types / Military / Cargo / Tanker / Passenger / Fishing / Tug/Pilot / High-Speed Craft / Pleasure Craft / Other
+- **Count display:** "Showing X of Y vessels" (hidden on mobile)
+- Props: `countryFilter`, `onCountryFilterChange`, `categoryFilter`, `onCategoryFilterChange`, `filteredCount`, `totalCount`, `countries: string[]`
+
 ### Aircraft Selection (src/app/page.tsx)
 
 - `selectedAircraft` state tracks the currently selected aircraft
@@ -268,6 +281,7 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - `getMIDFromMMSI(mmsi)` — extracts first 3 digits (Maritime Identification Digits) from MMSI
 - `getCountryFromMID(mid)` — looks up country name from MID code (60+ nations including flag-of-convenience states)
 - `identifyMilitaryVessel(mmsi, shipType, name)` — returns `{ isMilitary, category }` using three signal checks: AIS type codes 35/55, name pattern matching (USS, HMS, USCG, etc.), and MMSI prefix 3669 (US federal)
+- `VESSEL_CATEGORY_LABELS` — canonical `Record<VesselCategory, string>` for human-readable category names (shared by VesselMarker, VesselPanel, VesselFilterBar)
 - `VESSEL_COLORS` — display color per `VesselCategory` (military red, cargo blue, tanker orange, etc.)
 
 ### AIS Stream Manager (src/lib/aisStreamManager.ts)

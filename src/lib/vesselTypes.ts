@@ -274,6 +274,19 @@ export const identifyMilitaryVessel = (
   return { isMilitary: false, category: '' };
 };
 
+/** Human-readable labels for each vessel category. */
+export const VESSEL_CATEGORY_LABELS: Record<VesselCategory, string> = {
+  military: 'Military',
+  cargo: 'Cargo',
+  tanker: 'Tanker',
+  passenger: 'Passenger',
+  fishing: 'Fishing',
+  tug: 'Tug/Pilot',
+  highspeed: 'High-Speed Craft',
+  pleasure: 'Pleasure Craft',
+  other: 'Other',
+};
+
 /** Display colors for each vessel category. */
 export const VESSEL_COLORS: Record<VesselCategory, string> = {
   military: '#ff4444',
