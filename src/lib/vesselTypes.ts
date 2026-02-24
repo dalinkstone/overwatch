@@ -25,6 +25,8 @@ export interface VesselData {
   destination: string;
   /** Country name derived from MMSI's MID digits */
   flag: string;
+  /** ISO 3166-1 alpha-2 country code derived from MMSI's MID digits */
+  flagCode: string;
   /** Whether this vessel is identified as military */
   isMilitary: boolean;
   /** Military vessel sub-category: 'warship' | 'coast-guard' | 'military-support' | 'law-enforcement' | '' */
@@ -206,8 +208,59 @@ const MID_TO_COUNTRY: Record<string, string> = {
 };
 
 /** Look up country name from a Maritime Identification Digits code. */
-export const getCountryFromMID = (mid: string): string => {
-  return MID_TO_COUNTRY[mid] ?? 'Unknown';
+export const getCountryFromMID = (mid: string): { country: string; code: string } => {
+  const country = MID_TO_COUNTRY[mid] ?? 'Unknown';
+  const code = COUNTRY_NAME_TO_CODE[country] ?? '';
+  return { country, code };
+};
+
+/** Map country names used in MID_TO_COUNTRY → ISO 3166-1 alpha-2 codes. */
+const COUNTRY_NAME_TO_CODE: Record<string, string> = {
+  'United States': 'us',
+  'United Kingdom': 'gb',
+  'France': 'fr',
+  'Germany': 'de',
+  'Italy': 'it',
+  'Spain': 'es',
+  'Netherlands': 'nl',
+  'Norway': 'no',
+  'Sweden': 'se',
+  'Denmark': 'dk',
+  'Finland': 'fi',
+  'Poland': 'pl',
+  'Greece': 'gr',
+  'Turkey': 'tr',
+  'Russia': 'ru',
+  'Ukraine': 'ua',
+  'China': 'cn',
+  'Hong Kong': 'hk',
+  'Japan': 'jp',
+  'South Korea': 'kr',
+  'North Korea': 'kp',
+  'Taiwan': 'tw',
+  'India': 'in',
+  'Pakistan': 'pk',
+  'Iran': 'ir',
+  'Israel': 'il',
+  'Saudi Arabia': 'sa',
+  'UAE': 'ae',
+  'Egypt': 'eg',
+  'Australia': 'au',
+  'New Zealand': 'nz',
+  'Canada': 'ca',
+  'Brazil': 'br',
+  'Singapore': 'sg',
+  'Malaysia': 'my',
+  'Philippines': 'ph',
+  'Indonesia': 'id',
+  'Thailand': 'th',
+  'Vietnam': 'vn',
+  'Portugal': 'pt',
+  'Malta': 'mt',
+  'Panama': 'pa',
+  'Liberia': 'lr',
+  'Marshall Islands': 'mh',
+  'Bahamas': 'bs',
 };
 
 /** Military vessel name prefixes/keywords indicating warships. */
@@ -225,10 +278,33 @@ const WARSHIP_PATTERNS = [
   'ITS ',
   'ESPS ',
   'TCG ',
+  'INS ',     // Indian Navy Ship
+  'KRI ',     // Indonesian Navy (Kapal Republik Indonesia)
+  'ARA ',     // Argentine Navy (Armada República Argentina)
+  'BAP ',     // Peruvian Navy (Buque de la Armada del Perú)
+  'NRP ',     // Portuguese Navy (Navio da República Portuguesa)
+  'PNS ',     // Pakistan Navy Ship
+  'BNS ',     // Bangladesh Navy Ship
+  'ROKS ',    // Republic of Korea Ship
+  'ORP ',     // Polish Navy (Okręt Rzeczypospolitej Polskiej)
+  'KNM ',     // Royal Norwegian Navy (Kongelige Norske Marine)
+  'HDMS ',    // Royal Danish Navy (His/Her Danish Majesty's Ship)
+  'HNLMS ',   // Royal Netherlands Navy
+  'HTMS ',    // Royal Thai Navy (His Thai Majesty's Ship)
+  'SAS ',     // South African Ship
+  'BRP ',     // Philippine Navy (Barko ng Republika ng Pilipinas)
+  'JS ',      // Japanese Maritime Self-Defense Force
+  'JMSDF',    // Japan Maritime Self-Defense Force
 ];
 
 /** Coast guard name patterns. */
-const COAST_GUARD_PATTERNS = ['COAST GUARD', 'COASTGUARD'];
+const COAST_GUARD_PATTERNS = [
+  'COAST GUARD',
+  'COASTGUARD',
+  'GUARDIA COSTERA',  // Spanish coast guard
+  'GARDE COTE',       // French coast guard
+  'KUSTWACHT',        // Dutch coast guard
+];
 
 /**
  * Identify whether a vessel is military based on AIS type code, name, and MMSI.

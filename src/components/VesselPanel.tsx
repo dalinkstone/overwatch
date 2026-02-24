@@ -1,6 +1,7 @@
 "use client";
 
 import { VesselData, getVesselCategory, VESSEL_CATEGORY_LABELS } from "@/lib/vesselTypes";
+import { countryCodeToFlag } from "@/lib/countryLookup";
 
 interface VesselPanelProps {
   vessel: VesselData | null;
@@ -58,7 +59,6 @@ export const VesselPanel = ({
               </h2>
               <div className="mt-1 text-xs text-zinc-400">
                 MMSI: {vessel.mmsi}
-                {vessel.flag && ` · ${vessel.flag}`}
               </div>
               {signalLost && (
                 <span className="mt-1 inline-flex items-center gap-1 rounded bg-red-900/60 px-2 py-0.5 text-xs text-red-300">
@@ -82,6 +82,16 @@ export const VesselPanel = ({
               </svg>
             </button>
           </div>
+
+          {/* Country flag badge */}
+          {vessel.flagCode && (
+            <div className="mb-4">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-700/50 px-3 py-1 text-sm">
+                <span className="text-base leading-none">{countryCodeToFlag(vessel.flagCode)}</span>
+                <span className="text-zinc-200">{vessel.flag}</span>
+              </span>
+            </div>
+          )}
 
           {/* Military badge */}
           {vessel.isMilitary && vessel.militaryCategory && (

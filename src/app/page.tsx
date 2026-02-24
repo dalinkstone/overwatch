@@ -54,15 +54,19 @@ const matchesCategory = (ac: AircraftState, filter: string): boolean => {
 export default function Home() {
   const { aircraft, loading, error, lastUpdated, totalCount } = useAircraftData();
 
-  const [vesselEnabled, setVesselEnabled] = useState(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      return localStorage.getItem(VESSEL_LAYER_KEY) === "true";
-    } catch {
-      return false;
-    }
-  });
+  const [vesselEnabled, setVesselEnabled] = useState(false);
   const { vessels, status: vesselStatus } = useVesselData(vesselEnabled);
+
+  // Hydrate vessel toggle from localStorage after mount (avoids SSR mismatch)
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(VESSEL_LAYER_KEY) === "true") {
+        setVesselEnabled(true);
+      }
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
 
   const handleVesselToggle = useCallback((enabled: boolean) => {
     setVesselEnabled(enabled);

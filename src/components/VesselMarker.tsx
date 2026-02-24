@@ -3,6 +3,7 @@
 import { memo, useEffect, useRef } from "react";
 import L from "leaflet";
 import { VesselData, getVesselCategory, VESSEL_COLORS, VESSEL_CATEGORY_LABELS } from "@/lib/vesselTypes";
+import { countryCodeToFlag } from "@/lib/countryLookup";
 
 interface VesselMarkerProps {
   vessel: VesselData;
@@ -67,7 +68,7 @@ const buildPopupContent = (vessel: VesselData): string => {
   return `<div style="font-size:13px;line-height:1.5">
     <div style="font-weight:bold;font-size:14px">${name}</div>
     <div>MMSI: ${vessel.mmsi}</div>
-    ${vessel.flag ? `<div>Flag: ${vessel.flag}</div>` : ""}
+    ${vessel.flagCode ? `<div>${countryCodeToFlag(vessel.flagCode)} ${vessel.flag}</div>` : vessel.flag ? `<div>Flag: ${vessel.flag}</div>` : ""}
     <div>Category: ${categoryLabel}</div>
     <div>Speed: ${speed}</div>
     <div>Course: ${course}</div>

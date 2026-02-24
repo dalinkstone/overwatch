@@ -105,6 +105,7 @@ const processAisMessage = (msg: unknown): void => {
     shipType: 0,
     destination: '',
     flag: '',
+    flagCode: '',
     isMilitary: false,
     militaryCategory: '',
     lastUpdate: 0,
@@ -151,7 +152,9 @@ const processAisMessage = (msg: unknown): void => {
 
   // Compute flag from MID
   const mid = getMIDFromMMSI(mmsi);
-  vessel.flag = getCountryFromMID(mid);
+  const midInfo = getCountryFromMID(mid);
+  vessel.flag = midInfo.country;
+  vessel.flagCode = midInfo.code;
 
   // Compute military status
   const mil = identifyMilitaryVessel(mmsi, vessel.shipType, vessel.name);
