@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { AircraftState, hasPosition } from "@/lib/types";
+import { AircraftState, hasPosition, isMilitary } from "@/lib/types";
 import { fetchMilitaryAircraft } from "@/lib/api";
 
 const POLL_INTERVAL_MS = parseInt(
@@ -26,7 +26,9 @@ export const useAircraftData = (): UseAircraftDataReturn => {
   const fetchData = useCallback(async () => {
     try {
       const response = await fetchMilitaryAircraft();
-      const positioned = response.ac.filter(hasPosition);
+      const positioned = response.ac.filter(
+        (ac) => isMilitary(ac) && hasPosition(ac)
+      );
       setAircraft(positioned);
       setTotalCount(response.total);
       setLastUpdated(new Date());

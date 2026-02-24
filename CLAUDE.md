@@ -11,6 +11,7 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 - **Phase 3 (API Proxy Route):** Complete — full upstream proxy with caching, timeout, error handling
 - **Phase 5 (Map Components):** Complete — AircraftMarker, Map, MapWrapper with dynamic import (no SSR)
 - **Phase 6 (Polling + Integration):** Complete — useAircraftData hook, StatusBar, page wiring, live data on map
+- **Phase 7 (Detail Panel):** Complete — AircraftPanel slide-in, aircraft selection, signal lost tracking, isMilitary filtering
 
 ### What's Implemented
 
@@ -21,12 +22,13 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 | `src/lib/api.ts` | Done | `fetchMilitaryAircraft` — fetches from local proxy with validation |
 | `src/app/api/aircraft/route.ts` | Done | Proxies to ADSB.lol `/v2/mil` with 15s timeout, cache headers, structured 502 errors |
 | `src/app/layout.tsx` | Done | Root layout with metadata and globals.css import |
-| `src/app/page.tsx` | Done | Client component with useAircraftData hook, StatusBar, and MapWrapper |
+| `src/app/page.tsx` | Done | Client component with useAircraftData hook, StatusBar, MapWrapper, and AircraftPanel selection |
 | `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with DivIcon inline SVG, altitude-based coloring, track rotation, popup with details |
 | `src/components/Map.tsx` | Done | Client component with `MapContainer`, `TileLayer`, renders `AircraftMarker` for each positioned aircraft |
 | `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
+| `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel for selected aircraft with all fields, signal lost indicator, close button |
 | `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, last updated time, connection status with colored indicator |
-| `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, manages aircraft state, error handling, preserves data on failure |
+| `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by isMilitary + hasPosition, preserves data on failure |
 
 ## Commands
 
@@ -125,7 +127,7 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 
 - `useAircraftData()` — custom hook that polls `/api/aircraft` every 10 seconds
 - Returns `{ aircraft, loading, error, lastUpdated, totalCount }`
-- `aircraft` is pre-filtered to only include aircraft with valid positions (via `hasPosition`)
+- `aircraft` is pre-filtered to only include confirmed military aircraft with valid positions (via `isMilitary` + `hasPosition`)
 - On mount: fetches immediately, then sets up `setInterval` with `POLL_INTERVAL_MS` (default 10000, reads `NEXT_PUBLIC_POLL_INTERVAL_MS`)
 - On success: replaces full aircraft state, updates `totalCount` from `response.total`, sets `lastUpdated`, clears error
 - On failure: sets error message string, preserves previous aircraft data on map, continues polling
@@ -137,6 +139,24 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 - Left side: total count (from API response) and tracked count (aircraft with positions)
 - Right side: last updated time (HH:MM:SS), connection status (green/red dot + message)
 - Props: `totalCount`, `positionCount`, `lastUpdated`, `error`
+
+### AircraftPanel (src/components/AircraftPanel.tsx)
+
+- Slide-in panel on the right side (320px wide, `zinc-800` background, rounded left corners, shadow)
+- Props: `aircraft` (AircraftState | null), `onClose` callback, `signalLost` boolean
+- When `aircraft` is null, panel slides off-screen via `translate-x-full` with CSS transition
+- Displays: callsign (bold header), ICAO hex, registration, type code, altitude, speed, heading, squawk, lat/lon (4 decimal places), last seen time, military badge
+- Close button (X) in top-right corner
+- "Signal lost" indicator (red badge with pulse animation) when aircraft disappears from data
+- Absolutely positioned overlaying the map at `z-[1000]`
+
+### Aircraft Selection (src/app/page.tsx)
+
+- `selectedAircraft` state tracks the currently selected aircraft
+- `signalLost` state tracks whether the selected aircraft has disappeared from polling data
+- On each poll refresh, updates selected aircraft data by matching `hex` code
+- If the selected aircraft disappears from the data, keeps showing last known state with "Signal lost" indicator
+- Close handler clears selection and resets signal lost state
 
 ## Allowed Dependencies
 

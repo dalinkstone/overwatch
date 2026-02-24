@@ -126,6 +126,7 @@ overwatch/
     │           └── route.ts     # API proxy route (proxies to ADSB.lol)
     ├── components/
     │   ├── AircraftMarker.tsx   # React.memo'd Leaflet marker with plane SVG
+    │   ├── AircraftPanel.tsx    # Slide-in detail panel for selected aircraft
     │   ├── Map.tsx              # Leaflet MapContainer with TileLayer + markers
     │   ├── MapWrapper.tsx       # Dynamic import wrapper (ssr: false)
     │   └── StatusBar.tsx        # Top bar: counts, last updated, connection status
@@ -381,6 +382,7 @@ Tested with `npm run dev` and `curl http://localhost:3000/api/aircraft`:
 | `src/lib/utils.ts` | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` | AircraftMarker |
 | `src/lib/api.ts` | `fetchMilitaryAircraft` | useAircraftData hook |
 | `src/hooks/useAircraftData.ts` | `useAircraftData` | page.tsx |
+| `src/components/AircraftPanel.tsx` | `AircraftPanel` | page.tsx |
 | `src/components/StatusBar.tsx` | `StatusBar` | page.tsx |
 | `src/components/MapWrapper.tsx` | `MapWrapper` | page.tsx |
 | `src/components/Map.tsx` | `default` (Map) | MapWrapper (via dynamic import) |
@@ -400,6 +402,8 @@ types.ts  ←── utils.ts
     │    ↑
     │    │
     ├── page.tsx ──→ StatusBar.tsx
+    │    │
+    │    └──→ AircraftPanel.tsx
     │    │
     │    └──→ MapWrapper.tsx ──→ Map.tsx ──→ AircraftMarker.tsx
     │                                            ↑
@@ -470,15 +474,17 @@ npm run lint
 npm run build
 ```
 
-### Current state (after Phase 6)
+### Current state (after Phase 7)
 
 When you open `http://localhost:3000`, you will see:
 
 1. A dark status bar at the top showing total aircraft count, tracked (positioned) count, last updated time, and a green connection indicator
 2. A full-screen Leaflet map with plane icons for military aircraft
 3. Plane icons colored by altitude: green (ground), blue (<10,000 ft), red (>=10,000 ft), rotated to match heading
-4. Data refreshes automatically every 10 seconds
+4. Data refreshes automatically every 10 seconds (only confirmed military aircraft shown)
 5. Clicking a plane shows a popup with callsign, type, registration, altitude, and speed
+6. Clicking a plane also opens a slide-in detail panel on the right with comprehensive aircraft info
+7. If a selected aircraft disappears from data, a "Signal lost" indicator appears in the panel
 
 The API proxy route at `http://localhost:3000/api/aircraft` returns live military aircraft data proxied from ADSB.lol. Expect a JSON response with 200-800 aircraft in the `ac` array.
 
@@ -676,6 +682,105 @@ Wires together all components:
 
 ---
 
+## Phase 7: Detail Panel + Military Filtering Fix
+
+Phase 7 added an aircraft detail panel and fixed a data quality issue where non-military aircraft (e.g. Cessna) could appear on the map.
+
+### Bug Fix: Military Filtering
+
+The `/v2/mil` endpoint from ADSB.lol is intended to return only military aircraft, but the community-curated database isn't perfect — some non-military aircraft can slip through. The `isMilitary()` type guard existed in `types.ts` but was never applied in the data pipeline.
+
+**Fix:** Added `isMilitary` as a secondary filter in `useAircraftData.ts`. Aircraft must now pass both `isMilitary(ac)` AND `hasPosition(ac)` to appear on the map. This ensures only aircraft with `(dbFlags & 1) !== 0` are displayed.
+
+### Polling Frequency Analysis
+
+The ADSB.lol API has no enforced rate limit, but their documentation and community guidelines recommend polling no faster than every 10 seconds. The upstream data refreshes approximately every 1-5 seconds. Our 10-second polling interval provides near-realtime tracking while being respectful of the free API. The server-side cache headers (`s-maxage=5, stale-while-revalidate=10`) align with this interval.
+
+### Files implemented/modified:
+
+### `src/components/AircraftPanel.tsx` — Aircraft Detail Panel
+
+A slide-in panel that displays comprehensive information about a selected aircraft.
+
+**Props:**
+
+| Prop | Type | Description |
+|---|---|---|
+| `aircraft` | `AircraftState \| null` | The selected aircraft, or null to hide |
+| `onClose` | `() => void` | Callback to close the panel |
+| `signalLost` | `boolean` | Whether the aircraft has disappeared from polling data |
+
+**Layout:**
+
+- Positioned absolutely on the right side of the map container
+- 320px wide, full height, `zinc-800` background, rounded left corners
+- Slides in/out via CSS `transform: translateX()` with 300ms ease-in-out transition
+- `z-[1000]` to overlay the Leaflet map
+- Subtle left shadow (`-4px 0 16px rgba(0,0,0,0.4)`)
+
+**Content (top to bottom):**
+
+1. **Header row** — Callsign (bold, xl) + close button (X icon, hover effect)
+2. **Signal lost badge** (conditional) — Red background, pulsing dot, "Signal lost" text
+3. **Military badge** — Amber star icon with "Military" label
+4. **Detail rows** (separated by dividers):
+   - ICAO Hex (uppercased)
+   - Registration / tail number
+   - Aircraft type code
+   - Altitude (formatted via `formatAltitude`)
+   - Ground speed (formatted via `formatSpeed`)
+   - Heading (rounded degrees with ° suffix)
+   - Squawk code
+   - Latitude (4 decimal places)
+   - Longitude (4 decimal places)
+   - Last seen (human-readable: "Just now", "Xs ago", "Xm Ys ago")
+
+**Helper functions (local to file):**
+
+- `formatCoordinate(value)` — formats to 4 decimal places or "N/A"
+- `formatHeading(track)` — rounded degrees with ° suffix or "N/A"
+- `formatLastSeen(seen)` — converts seconds to human-readable duration
+
+### `src/app/page.tsx` — Updated with Aircraft Selection
+
+Added aircraft selection state management and panel rendering.
+
+**New state:**
+
+| State | Type | Purpose |
+|---|---|---|
+| `selectedAircraft` | `AircraftState \| null` | Currently selected aircraft for the detail panel |
+| `signalLost` | `boolean` | Whether selected aircraft has disappeared from data |
+| `selectedHexRef` | `Ref<string \| null>` | Ref tracking selected hex (avoids stale closure issues) |
+
+**New behavior:**
+
+1. `handleAircraftClick(ac)` — Sets selected aircraft, clears signal lost, updates hex ref
+2. `handleClosePanel()` — Clears selection, resets signal lost, clears hex ref
+3. **Poll refresh effect** — When `aircraft` array updates from a new poll:
+   - Finds the selected aircraft by hex code in the new data
+   - If found: updates `selectedAircraft` with fresh data, clears signal lost
+   - If not found: sets `signalLost = true`, keeps showing last known state
+4. **Layout** — `AircraftPanel` rendered inside the map container div (sibling to `MapWrapper`), positioned absolutely
+
+### `src/hooks/useAircraftData.ts` — Military Filter Added
+
+**Change:** The filter pipeline changed from:
+
+```typescript
+// Before
+const positioned = response.ac.filter(hasPosition);
+
+// After
+const positioned = response.ac.filter(
+  (ac) => isMilitary(ac) && hasPosition(ac)
+);
+```
+
+Now imports `isMilitary` from `@/lib/types` and applies it before `hasPosition`. This ensures only aircraft with the military `dbFlags` bit set are shown on the map, preventing civilian aircraft from appearing even if the upstream `/v2/mil` endpoint includes them.
+
+---
+
 ## Remaining Phases
 
 | Phase | Description | Key Deliverables |
@@ -684,7 +789,7 @@ Wires together all components:
 | ~~4~~ | ~~Aircraft Icon~~ | ~~Done (inline SVG in AircraftMarker)~~ |
 | ~~5~~ | ~~Map Components~~ | ~~Done~~ |
 | ~~6~~ | ~~Polling + Integration~~ | ~~Done~~ |
-| 7 | Detail Panel | `AircraftPanel.tsx` slide-in panel for selected aircraft |
+| ~~7~~ | ~~Detail Panel~~ | ~~Done — AircraftPanel, selection state, signal lost, isMilitary filter~~ |
 | 8 | Filter Bar | Search, altitude filter, aircraft count display |
 | 9 | Polish | Loading/error/empty states, responsive design, metadata |
 | 10 | Final Verification | End-to-end testing, build validation, documentation review |
