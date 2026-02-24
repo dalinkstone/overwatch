@@ -23,21 +23,26 @@ interface AirspaceOverlayProps {
 /** Nautical miles to meters conversion factor. */
 const NM_TO_M = 1852;
 
-/** Build Leaflet path options for a zone based on type, source, and selection state. */
+/** Build Leaflet path options for a zone based on type, source, active status, and selection state. */
 const getZoneStyle = (
   type: AirspaceType,
   source: "sua" | "tfr",
   isSelected: boolean,
+  isActive: boolean = true,
 ): L.PathOptions => {
   const color = AIRSPACE_COLORS[type];
+  // Inactive SUA zones: stroke-only, no fill (reduces map clutter)
+  const inactiveStrokeOnly = !isActive && source === "sua";
   return {
     color: isSelected ? "#ffffff" : color,
-    weight: isSelected ? 3 : 1.5,
-    opacity: isSelected ? 1 : AIRSPACE_STROKE_OPACITY[type],
+    weight: isSelected ? 3 : inactiveStrokeOnly ? 1 : 1.5,
+    opacity: isSelected ? 1 : inactiveStrokeOnly ? 0.4 : AIRSPACE_STROKE_OPACITY[type],
     fillColor: color,
     fillOpacity: isSelected
       ? Math.min(AIRSPACE_FILL_OPACITY[type] + 0.15, 0.5)
-      : AIRSPACE_FILL_OPACITY[type],
+      : inactiveStrokeOnly
+        ? 0
+        : AIRSPACE_FILL_OPACITY[type],
     ...(source === "tfr" ? { dashArray: "8 4" } : {}),
   };
 };
@@ -66,7 +71,7 @@ const createZoneLayer = (
   isSelected: boolean,
 ): L.Path | null => {
   const style: L.PathOptions = {
-    ...getZoneStyle(zone.type, zone.source, isSelected),
+    ...getZoneStyle(zone.type, zone.source, isSelected, zone.isActive),
     pane,
   };
 
@@ -203,7 +208,7 @@ const AirspaceOverlayComponent = ({
       const prevLayer = layersRef.current.get(prevId);
       const prevZone = zoneDataRef.current.get(prevId);
       if (prevLayer && prevZone) {
-        prevLayer.setStyle(getZoneStyle(prevZone.type, prevZone.source, false));
+        prevLayer.setStyle(getZoneStyle(prevZone.type, prevZone.source, false, prevZone.isActive));
       }
     }
 
@@ -212,7 +217,7 @@ const AirspaceOverlayComponent = ({
       const layer = layersRef.current.get(selectedZoneId);
       const zone = zoneDataRef.current.get(selectedZoneId);
       if (layer && zone) {
-        layer.setStyle(getZoneStyle(zone.type, zone.source, true));
+        layer.setStyle(getZoneStyle(zone.type, zone.source, true, zone.isActive));
         layer.bringToFront();
       }
     }

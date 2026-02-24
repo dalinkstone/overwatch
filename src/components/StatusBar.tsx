@@ -10,6 +10,8 @@ interface StatusBarProps {
   satelliteEnabled?: boolean;
   satelliteCount?: number;
   satelliteError?: string | null;
+  airspaceEnabled?: boolean;
+  airspaceCount?: number;
 }
 
 const formatTime = (date: Date): string => {
@@ -31,6 +33,8 @@ export const StatusBar = ({
   satelliteEnabled,
   satelliteCount,
   satelliteError,
+  airspaceEnabled,
+  airspaceCount,
 }: StatusBarProps) => {
   return (
     <div className="flex items-center justify-between bg-zinc-900 px-4 py-2.5 text-xs text-white">
@@ -88,6 +92,15 @@ export const StatusBar = ({
           <>
             <span className="text-zinc-600">|</span>
             <span className="text-amber-400">Satellite data unavailable</span>
+          </>
+        )}
+        {airspaceEnabled && airspaceCount !== undefined && (
+          <>
+            <span className="text-zinc-600">|</span>
+            <span>
+              <span className="text-zinc-500">Airspace:</span>{" "}
+              <span className="font-mono text-orange-400">{airspaceCount.toLocaleString()}</span>
+            </span>
           </>
         )}
       </div>

@@ -12,7 +12,9 @@ Overwatch aggregates multiple publicly available data sources to create a compre
 
 **Satellite Tracking** — The satellite layer fetches orbital element data from [CelesTrak](https://celestrak.org/) and computes real-time positions client-side using the SGP4 propagation algorithm via satellite.js. Military-relevant satellites are displayed as colored diamond markers, categorized into reconnaissance, SIGINT, communications, navigation (GPS/GLONASS/BeiDou/Galileo), early warning, weather, and foreign military. No API key required.
 
-Additional planned data layers include conflict event mapping and airspace restriction overlays.
+**Airspace Restriction Tracking** — The airspace layer overlays restricted airspace zones on the map, including FAA Special Use Airspace (Restricted Areas, Prohibited Areas, MOAs, Warning Areas, Alert Areas) and active Temporary Flight Restrictions (TFRs). SUA data comes from FAA's ArcGIS Feature Service; TFR data comes from the FAA's TFR API and GeoServer. Zones are color-coded by type and rendered as polygon overlays with opacity indicating severity. TFRs use dashed strokes to distinguish them from permanent restrictions. No API key required.
+
+Additional planned data layers include conflict event mapping and seismic monitoring.
 
 All aircraft data comes from **ADS-B (Automatic Dependent Surveillance-Broadcast)** — a technology where aircraft broadcast their GPS position, identity, and flight parameters on 1090 MHz. Volunteer-run ground receivers collect these signals and feed them to aggregators like ADSB.lol. This data is inherently public; it is broadcast unencrypted over open radio frequencies.
 
@@ -124,14 +126,21 @@ Position computation is done **client-side** using the `satellite.js` library (J
 
 **GDELT** provides real-time global event data as GeoJSON, including military/conflict events, with no authentication required. Events can be filtered by CAMEO codes related to military action.
 
-### Layer 5: Airspace Restrictions / NOTAMs (Planned)
+### Layer 5: Airspace Restrictions (Active)
 
 | Source | URL | Auth | Status |
 |---|---|---|---|
-| FAA NOTAM API | `https://external-api.faa.gov/notamapi/v1/notams` | Free API key | Primary |
-| FAA TFR Feed | `https://tfr.faa.gov/tfr2/list.html` | None | Backup |
+| FAA ArcGIS (SUA) | `https://services6.arcgis.com/.../Special_Use_Airspace/FeatureServer/0/query` | None | Active |
+| FAA TFR List API | `https://tfr.faa.gov/tfrapi/getTfrList` | None | Active |
+| FAA TFR GeoServer | `https://tfr.faa.gov/geoserver/TFR/ows` (WFS) | None | Active |
 
-Temporary Flight Restrictions (TFRs) often correlate with VIP movement, military exercises, or security events.
+**Special Use Airspace (SUA):** Restricted Areas, Prohibited Areas, MOAs, Warning Areas, and Alert Areas fetched from FAA's ArcGIS Feature Service as GeoJSON. ~1534 zones, cached server-side for 24 hours (data updates every 28 days on FAA NASR cycle).
+
+**Temporary Flight Restrictions (TFRs):** Active TFRs fetched from FAA's JSON list API (metadata) and GeoServer WFS endpoint (geometry), joined by NOTAM ID. ~70 active TFRs, cached for 5 minutes. TFRs correlate with VIP movement, military exercises, security events, and space launches.
+
+**Zone types:** Restricted (orange), Prohibited (red), MOA (yellow), Warning (purple), Alert (cyan), TFR (red, dashed). TFR sub-types: VIP, Security, Hazard, Space Operations, Event, National Defense.
+
+**Rendering:** Polygon overlays with severity-based opacity. Inactive "BY NOTAM" zones shown as outlines only. Zoom gate at level 4+.
 
 ### Layer 6: Seismic Monitoring (Planned)
 
@@ -186,8 +195,10 @@ overwatch/
 │   │       │   └── route.ts     # Proxy to ADSB.lol /v2/mil
 │   │       ├── vessels/
 │   │       │   └── route.ts     # Serves cached vessel data from aisStreamManager
-│   │       └── satellites/
-│   │           └── route.ts     # Proxy to CelesTrak GP endpoints (10 catalogs, 30-min cache)
+│   │       ├── satellites/
+│   │       │   └── route.ts     # Proxy to CelesTrak GP endpoints (10 catalogs, 30-min cache)
+│   │       └── airspace/
+│   │           └── route.ts     # Proxy to FAA ArcGIS (SUA) + TFR API/GeoServer, merged response
 │   ├── components/
 │   │   ├── Map.tsx              # Leaflet map with aircraft + vessel + satellite rendering (client, no SSR)
 │   │   ├── MapWrapper.tsx       # Dynamic import wrapper for Map (ssr: false)
@@ -200,7 +211,10 @@ overwatch/
 │   │   ├── FilterBar.tsx        # Aircraft search + altitude/category filters
 │   │   ├── VesselFilterBar.tsx  # Vessel country + category filters
 │   │   ├── SatelliteFilterBar.tsx # Satellite search + category/orbit filters (purple accent)
-│   │   ├── LayerControl.tsx     # Floating layer toggle panel (aircraft/vessels/satellites)
+│   │   ├── AirspaceOverlay.tsx  # Airspace polygon overlay renderer (Leaflet L.polygon)
+│   │   ├── AirspacePanel.tsx    # Airspace zone detail panel (orange accent)
+│   │   ├── AirspaceFilterBar.tsx # Airspace type/TFR-type/active-only filters (orange accent)
+│   │   ├── LayerControl.tsx     # Floating layer toggle panel (aircraft/vessels/satellites/airspace)
 │   │   └── StatusBar.tsx        # Connection status + counts + satellite error indicator
 │   ├── hooks/
 │   │   ├── useAircraftData.ts   # Aircraft polling hook (10s interval)

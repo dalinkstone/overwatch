@@ -12,6 +12,7 @@ import {
 interface AirspacePanelProps {
   zone: AirspaceZone | null;
   onClose: () => void;
+  signalLost?: boolean;
 }
 
 /** Format an ISO datetime string to both UTC and local display. */
@@ -50,7 +51,7 @@ const TYPE_BADGE_CLASSES: Record<AirspaceType, string> = {
 
 const DESCRIPTION_TRUNCATE_LENGTH = 200;
 
-export const AirspacePanel = ({ zone, onClose }: AirspacePanelProps) => {
+export const AirspacePanel = ({ zone, onClose, signalLost }: AirspacePanelProps) => {
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
 
   const altitudeRange =
@@ -95,6 +96,14 @@ export const AirspacePanel = ({ zone, onClose }: AirspacePanelProps) => {
               </svg>
             </button>
           </div>
+
+          {/* Signal lost badge */}
+          {signalLost && (
+            <div className="mb-3 flex items-center gap-2 rounded bg-red-900/50 px-3 py-1.5 text-xs text-red-300">
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-400" />
+              Signal lost — zone no longer in data
+            </div>
+          )}
 
           {/* Type badge + TFR sub-type badge */}
           <div className="mb-4 flex flex-wrap items-center gap-2">

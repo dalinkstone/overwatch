@@ -4,10 +4,10 @@ Real-time military movement intelligence dashboard. Next.js 16 App Router, TypeS
 
 ## Status
 
-**Active layers:** Aircraft (ADSB.lol), Vessels (aisstream.io), Satellites (CelesTrak)
-**Planned layers:** Conflict events (GDELT), Airspace restrictions (FAA SUA + TFR), Seismic (USGS)
+**Active layers:** Aircraft (ADSB.lol), Vessels (aisstream.io), Satellites (CelesTrak), Airspace (FAA ArcGIS + FAA TFR API)
+**Planned layers:** Conflict events (GDELT), Seismic (USGS)
 
-All phases 1–13 complete. Every file listed in the project structure below is implemented and working.
+All phases complete. Every file listed in the project structure below is implemented and working.
 
 ## Commands
 
@@ -69,6 +69,7 @@ Managed in `page.tsx`, persisted to `localStorage`. Aircraft always on; vessels/
 | Aircraft | *(always on)* | on | 10s |
 | Vessels | `overwatch-vessel-layer` | off | 15s |
 | Satellites | `overwatch-satellite-layer` | off | TLE: 30min, positions: 30s |
+| Airspace | `overwatch-airspace-layer` | off | 5min |
 
 ## Data Sources
 
@@ -107,11 +108,35 @@ Managed in `page.tsx`, persisted to `localStorage`. Aircraft always on; vessels/
 
 **Markers:** Diamond SVG. GEO: 20px with glow ring. LEO/MEO: 16px. Pane z-440. Zoom gate ≥ 3.
 
+### Airspace — FAA ArcGIS + FAA TFR API
+
+Two sub-sources merged into one layer:
+
+**SUA (Special Use Airspace) — ArcGIS Feature Service:**
+- **Endpoint:** `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Special_Use_Airspace/FeatureServer/0/query`
+- **Types:** R (Restricted), P (Prohibited), MOA, W (Warning), A (Alert). No class B/C/D/E.
+- **Fields:** `NAME, TYPE_CODE, UPPER_VAL, UPPER_UOM, UPPER_CODE, LOWER_VAL, LOWER_UOM, LOWER_CODE, STATE, COUNTRY, TIMESOFUSE`
+- **No auth.** ~1534 features. Server cache: 24h (data changes every 28 days on FAA NASR cycle).
+
+**TFR (Temporary Flight Restrictions) — FAA JSON + GeoServer:**
+- **List API:** `https://tfr.faa.gov/tfrapi/getTfrList` → JSON array of active TFRs with type, description, state
+- **Geometry:** `https://tfr.faa.gov/geoserver/TFR/ows` (WFS) → GeoJSON polygons for all active TFRs
+- **Joined by NOTAM ID:** List metadata enriches GeoServer geometry features.
+- **No auth.** ~70 active TFRs. Server cache: 5min.
+
+**SUA types (6):** restricted (orange `#f97316`), prohibited (red `#ef4444`), moa (yellow `#eab308`), warning (purple `#8b5cf6`), alert (cyan `#06b6d4`), tfr (red `#dc2626`).
+
+**TFR sub-types (7):** vip, security, hazard, space, event, national-defense, other. Classified from FAA API `type` field.
+
+**Rendering:** GeoJSON polygons via `L.polygon()`. Pane z-420 (below satellites). Zoom gate ≥ 4. TFRs use dashed stroke (`dashArray: '8 4'`). Inactive "BY NOTAM" SUA zones render stroke-only (no fill). Opacity decreases with severity: TFR/Prohibited most opaque → Alert least opaque. Viewport filtered.
+
+**Active vs inactive:** `isZoneActive()` checks SUA schedule ("CONT" = active, "BY NOTAM" = inactive) and TFR effective time window. Default filter shows active-only (~330 zones); toggling off shows all ~1600 with inactive zones as outlines.
+
 ## Component Details
 
 ### Map.tsx
 
-Client component. Vanilla Leaflet (`L.map` + `L.tileLayer`). OSM tiles. Custom panes: satellites (z-440), vessels (z-450), aircraft (z-600 default marker pane). Viewport filtering via `moveend`/`zoomend` for vessels + satellites. Zoom gates: vessels ≥ 4, satellites ≥ 3.
+Client component. Vanilla Leaflet (`L.map` + `L.tileLayer`). OSM tiles. Custom panes: airspace (z-420), satellites (z-440), vessels (z-450), aircraft (z-600 default marker pane). Viewport filtering via `moveend`/`zoomend` for vessels, satellites, and airspace zones. Zoom gates: airspace ≥ 4, vessels ≥ 4, satellites ≥ 3.
 
 Attribution: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io | Satellite data: CelesTrak`
 
@@ -134,6 +159,7 @@ All use identical slide-in layout: right sidebar (320px) on desktop ≥768px, bo
 | AircraftPanel | amber | callsign, hex, reg, type, altitude, speed, heading, squawk, country flag, category badge |
 | VesselPanel | blue | name, MMSI, flag, military category, type, speed, course, heading, destination |
 | SatellitePanel | purple | name, NORAD ID, category, altitude, period, inclination, orbit type, velocity, intl designator, epoch |
+| AirspacePanel | orange | name, type badge, TFR sub-type, active status, altitude range, schedule/effective period, state, description, source |
 
 ### Filter Bars
 
@@ -144,6 +170,7 @@ Each layer has its own filter bar below StatusBar when active. Different accent 
 | FilterBar (aircraft) | default | search (callsign/reg/hex/type), altitude band, category, country, speed |
 | VesselFilterBar | blue | country, category, speed, destination search |
 | SatelliteFilterBar | purple | search (name/NORAD ID), category, orbit type |
+| AirspaceFilterBar | orange | type, TFR sub-type, active-only toggle |
 
 ### Page Integration (page.tsx)
 
@@ -155,22 +182,17 @@ Each layer has its own filter bar below StatusBar when active. Different accent 
 
 ### StatusBar
 
-Fixed top. Dark zinc-900. Shows: brand, total/tracked aircraft count, vessel count (blue, when active), satellite count (purple, when active), satellite error (amber), last updated time, connection status dot.
+Fixed top. Dark zinc-900. Shows: brand, total/tracked aircraft count, vessel count (blue, when active), satellite count (purple, when active), satellite error (amber), airspace zone count (orange, when active), last updated time, connection status dot.
 
 ### LayerControl
 
-Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot), vessel row (toggleable, blue), satellite row (toggleable, purple). Disabled state for missing API key.
+Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot), vessel row (toggleable, blue), satellite row (toggleable, purple), airspace row (toggleable, orange). Disabled state for missing API key (vessels only).
 
 ## Planned Layers
 
 ### Conflicts (GDELT)
 - `https://api.gdeltproject.org/api/v2/geo/geo?query=military&mode=pointdata&format=geojson&timespan=24h`
 - No auth. Filter by CAMEO codes 17-20 (coerce, assault, fight, mass violence).
-
-### Airspace Restrictions (FAA)
-- **SUA:** ArcGIS Feature Service — restricted/prohibited/MOA/warning/alert polygons. No auth. GeoJSON.
-- **TFR:** `tfr.faa.gov` XML feed — temporary flight restrictions with geometry. No auth.
-- See `PLAN.md` for full implementation details.
 
 ### Seismic (USGS)
 - `https://earthquake.usgs.gov/fdsnws/event/1/` — GeoJSON. No auth. Circle markers with magnitude sizing.
@@ -180,6 +202,7 @@ Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot),
 - Aircraft: 200-800 markers, no virtualization needed
 - Vessels: viewport filtered, zoom gate ≥ 4, supports 2000+ concurrent
 - Satellites: viewport filtered, zoom gate ≥ 3, client-side SGP4 (no server round-trip between TLE fetches)
+- Airspace: viewport filtered, zoom gate ≥ 4, ~330 active zones (up to ~1600 with inactive). Polygon overlays via `L.polygon()`.
 - All markers `React.memo`'d. No historical positions stored — each poll replaces state entirely.
 
 ## Error Handling
@@ -190,6 +213,7 @@ Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot),
 - Vessel layer degrades gracefully if no API key (shows "API key required")
 - AIS WebSocket: auto-reconnect with exponential backoff (5s × 10, then 60s reset)
 - Satellite route: `partial: true` flag when some catalogs fail
+- Airspace route: `partial: true` when one source (SUA or TFR) fails; both use `Promise.allSettled`
 
 ## Allowed Dependencies
 
@@ -224,3 +248,5 @@ Do not add others without explicit approval.
 | tar1090 (hex→country) | MIT |
 | aisstream.io | Free API key |
 | CelesTrak | Free, no auth |
+| FAA ArcGIS (SUA) | Free, no auth |
+| FAA TFR API/GeoServer | Free, no auth |

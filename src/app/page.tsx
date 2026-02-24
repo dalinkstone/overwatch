@@ -10,6 +10,7 @@ import { VesselFilterBar } from "@/components/VesselFilterBar";
 import { SatelliteFilterBar } from "@/components/SatelliteFilterBar";
 import { SatellitePanel } from "@/components/SatellitePanel";
 import { AirspaceFilterBar } from "@/components/AirspaceFilterBar";
+import { AirspacePanel } from "@/components/AirspacePanel";
 import { LayerControl } from "@/components/LayerControl";
 import { useAircraftData } from "@/hooks/useAircraftData";
 import { useVesselData } from "@/hooks/useVesselData";
@@ -18,7 +19,7 @@ import { useAirspaceData } from "@/hooks/useAirspaceData";
 import { AircraftState } from "@/lib/types";
 import { VesselData, VesselCategory, getVesselCategory } from "@/lib/vesselTypes";
 import { SatellitePosition, SatelliteCategory } from "@/lib/satelliteTypes";
-import { AirspaceType, TfrType } from "@/lib/airspaceTypes";
+import { AirspaceType, TfrType, AirspaceZone } from "@/lib/airspaceTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 import { getCountryFromHex } from "@/lib/countryLookup";
 
@@ -170,6 +171,9 @@ export default function Home() {
       // localStorage unavailable
     }
     if (!enabled) {
+      setSelectedAirspace(null);
+      setAirspaceSignalLost(false);
+      selectedAirspaceIdRef.current = null;
       setAirspaceTypeFilter("all");
       setAirspaceTfrTypeFilter("all");
       setAirspaceActiveOnly(true);
@@ -188,6 +192,10 @@ export default function Home() {
   const [selectedSatellite, setSelectedSatellite] = useState<SatellitePosition | null>(null);
   const [satelliteSignalLost, setSatelliteSignalLost] = useState(false);
   const selectedNoradRef = useRef<number | null>(null);
+
+  const [selectedAirspace, setSelectedAirspace] = useState<AirspaceZone | null>(null);
+  const [airspaceSignalLost, setAirspaceSignalLost] = useState(false);
+  const selectedAirspaceIdRef = useRef<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [altitudeFilter, setAltitudeFilter] = useState("all");
@@ -329,13 +337,16 @@ export default function Home() {
     setSelectedAircraft(ac);
     setSignalLost(false);
     selectedHexRef.current = ac.hex;
-    // Close vessel and satellite panels
+    // Close other panels (mutual exclusivity)
     setSelectedVessel(null);
     setVesselSignalLost(false);
     selectedMmsiRef.current = null;
     setSelectedSatellite(null);
     setSatelliteSignalLost(false);
     selectedNoradRef.current = null;
+    setSelectedAirspace(null);
+    setAirspaceSignalLost(false);
+    selectedAirspaceIdRef.current = null;
   }, []);
 
   const handleCloseAircraftPanel = useCallback(() => {
@@ -348,13 +359,16 @@ export default function Home() {
     setSelectedVessel(v);
     setVesselSignalLost(false);
     selectedMmsiRef.current = v.mmsi;
-    // Close aircraft and satellite panels
+    // Close other panels (mutual exclusivity)
     setSelectedAircraft(null);
     setSignalLost(false);
     selectedHexRef.current = null;
     setSelectedSatellite(null);
     setSatelliteSignalLost(false);
     selectedNoradRef.current = null;
+    setSelectedAirspace(null);
+    setAirspaceSignalLost(false);
+    selectedAirspaceIdRef.current = null;
   }, []);
 
   const handleCloseVesselPanel = useCallback(() => {
@@ -367,19 +381,44 @@ export default function Home() {
     setSelectedSatellite(s);
     setSatelliteSignalLost(false);
     selectedNoradRef.current = s.noradId;
-    // Close aircraft and vessel panels (mutual exclusivity)
+    // Close other panels (mutual exclusivity)
     setSelectedAircraft(null);
     setSignalLost(false);
     selectedHexRef.current = null;
     setSelectedVessel(null);
     setVesselSignalLost(false);
     selectedMmsiRef.current = null;
+    setSelectedAirspace(null);
+    setAirspaceSignalLost(false);
+    selectedAirspaceIdRef.current = null;
   }, []);
 
   const handleCloseSatellitePanel = useCallback(() => {
     setSelectedSatellite(null);
     setSatelliteSignalLost(false);
     selectedNoradRef.current = null;
+  }, []);
+
+  const handleAirspaceZoneClick = useCallback((zone: AirspaceZone) => {
+    setSelectedAirspace(zone);
+    setAirspaceSignalLost(false);
+    selectedAirspaceIdRef.current = zone.id;
+    // Close other panels (mutual exclusivity)
+    setSelectedAircraft(null);
+    setSignalLost(false);
+    selectedHexRef.current = null;
+    setSelectedVessel(null);
+    setVesselSignalLost(false);
+    selectedMmsiRef.current = null;
+    setSelectedSatellite(null);
+    setSatelliteSignalLost(false);
+    selectedNoradRef.current = null;
+  }, []);
+
+  const handleCloseAirspacePanel = useCallback(() => {
+    setSelectedAirspace(null);
+    setAirspaceSignalLost(false);
+    selectedAirspaceIdRef.current = null;
   }, []);
 
   // Update selected aircraft data when new poll results arrive
@@ -422,6 +461,19 @@ export default function Home() {
     }
   }, [satellites]);
 
+  // Update selected airspace zone when data refreshes
+  useEffect(() => {
+    if (!selectedAirspaceIdRef.current) return;
+
+    const updated = airspaceAllZones.find((z) => z.id === selectedAirspaceIdRef.current);
+    if (updated) {
+      setSelectedAirspace(updated);
+      setAirspaceSignalLost(false);
+    } else {
+      setAirspaceSignalLost(true);
+    }
+  }, [airspaceAllZones]);
+
   return (
     <main className="relative flex h-screen w-full flex-col overflow-hidden">
       <StatusBar
@@ -434,6 +486,8 @@ export default function Home() {
         satelliteEnabled={satelliteEnabled}
         satelliteCount={filteredSatellites.length}
         satelliteError={satelliteError}
+        airspaceEnabled={airspaceEnabled}
+        airspaceCount={filteredAirspaces.length}
       />
       <FilterBar
         searchQuery={searchQuery}
@@ -512,6 +566,10 @@ export default function Home() {
           satellites={satelliteEnabled ? filteredSatellites : []}
           onSatelliteClick={handleSatelliteClick}
           satelliteLayerEnabled={satelliteEnabled}
+          airspaceZones={airspaceEnabled ? filteredAirspaces : []}
+          selectedAirspaceZoneId={selectedAirspace?.id ?? null}
+          onAirspaceZoneClick={handleAirspaceZoneClick}
+          airspaceLayerEnabled={airspaceEnabled}
         />
         {/* Loading overlay */}
         {loading && (
@@ -547,6 +605,11 @@ export default function Home() {
           satellite={selectedSatellite}
           onClose={handleCloseSatellitePanel}
           signalLost={satelliteSignalLost}
+        />
+        <AirspacePanel
+          zone={selectedAirspace}
+          onClose={handleCloseAirspacePanel}
+          signalLost={airspaceSignalLost}
         />
         <LayerControl
           aircraftCount={filteredAircraft.length}

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import {
   type AirspaceZone,
   type AirspaceType,
+  type TfrType,
   mapSuaTypeCode,
-  classifyTfr,
   formatAirspaceAltitude,
   isZoneActive,
 } from "@/lib/airspaceTypes";
@@ -20,13 +20,15 @@ const SUA_ENDPOINT =
 const SUA_PARAMS = new URLSearchParams({
   where: "TYPE_CODE IN ('R','P','W','A','MOA')",
   outFields:
-    "NAME,TYPE_CODE,LOCAL_TYPE,UPPER_VAL,UPPER_UOM,LOWER_VAL,LOWER_UOM,CITY,STATE,COUNTRY,SCHEDULE",
+    "NAME,TYPE_CODE,UPPER_VAL,UPPER_UOM,UPPER_CODE,LOWER_VAL,LOWER_UOM,LOWER_CODE,STATE,COUNTRY,TIMESOFUSE",
   f: "geojson",
   outSR: "4326",
+  resultRecordCount: "5000",
 });
 
-const TFR_LIST_URL = "https://tfr.faa.gov/tfr2/list.html";
-const TFR_DETAIL_BASE = "https://tfr.faa.gov/save_pages/detail_";
+const TFR_LIST_URL = "https://tfr.faa.gov/tfrapi/getTfrList";
+const TFR_GEO_URL =
+  "https://tfr.faa.gov/geoserver/TFR/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=TFR:V_TFR_LOC&maxFeatures=500&outputFormat=application/json&srsname=EPSG:4326";
 
 /** SUA cache — 24-hour TTL (data changes every 28 days). */
 let suaCache: { zones: AirspaceZone[]; fetchedAt: number } | null = null;
@@ -50,84 +52,16 @@ const fetchWithTimeout = async (
   }
 };
 
-/**
- * Generate a GeoJSON polygon ring approximating a circle.
- * Uses the Haversine-based destination point formula.
- * @param lat  Center latitude in degrees
- * @param lon  Center longitude in degrees
- * @param radiusNm  Radius in nautical miles
- * @param numPoints  Number of polygon vertices (default 64)
- * @returns Array of [lon, lat] coordinate pairs forming a closed ring
- */
-const circleToPolygon = (
-  lat: number,
-  lon: number,
-  radiusNm: number,
-  numPoints: number = 64
-): [number, number][] => {
-  const radiusKm = radiusNm * 1.852;
-  const earthRadiusKm = 6371;
-  const angularDistance = radiusKm / earthRadiusKm;
-
-  const latRad = (lat * Math.PI) / 180;
-  const lonRad = (lon * Math.PI) / 180;
-
-  const points: [number, number][] = [];
-
-  for (let i = 0; i <= numPoints; i++) {
-    const bearing = (2 * Math.PI * i) / numPoints;
-
-    const destLat = Math.asin(
-      Math.sin(latRad) * Math.cos(angularDistance) +
-        Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearing)
-    );
-
-    const destLon =
-      lonRad +
-      Math.atan2(
-        Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latRad),
-        Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(destLat)
-      );
-
-    points.push([(destLon * 180) / Math.PI, (destLat * 180) / Math.PI]);
-  }
-
-  return points;
-};
-
-/**
- * Extract text content of the first matching XML element.
- * Simple regex-based parser — avoids adding an XML library dependency.
- */
-const xmlText = (xml: string, tag: string): string | undefined => {
-  const regex = new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`, "i");
-  const match = xml.match(regex);
-  return match ? match[1].trim() : undefined;
-};
-
-/** Extract all matches of a tag's text content. */
-const xmlTextAll = (xml: string, tag: string): string[] => {
-  const regex = new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`, "gi");
-  const results: string[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(xml)) !== null) {
-    results.push(match[1].trim());
-  }
-  return results;
-};
-
-/** Extract all XML blocks matching a given element name. */
-const xmlBlocks = (xml: string, tag: string): string[] => {
-  const regex = new RegExp(
-    `<${tag}[^>]*>[\\s\\S]*?</${tag}>`,
-    "gi"
-  );
-  const results: string[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(xml)) !== null) {
-    results.push(match[0]);
-  }
-  return results;
+/** Map TFR type string from FAA API to our TfrType enum. */
+const mapTfrApiType = (type: string): TfrType => {
+  const upper = type.toUpperCase();
+  if (upper.includes("VIP")) return "vip";
+  if (upper.includes("SECURITY")) return "security";
+  if (upper.includes("HAZARD")) return "hazard";
+  if (upper.includes("SPACE")) return "space";
+  if (upper.includes("AIR SHOW") || upper.includes("SPORT")) return "event";
+  if (upper.includes("DEFENSE")) return "national-defense";
+  return "other";
 };
 
 // ---------------------------------------------------------------------------
@@ -158,13 +92,13 @@ const suaFeatureToZone = (feature: Record<string, unknown>): AirspaceZone => {
     geometry: feature.geometry as GeoJSON.Geometry,
     upperAltitude: formatAirspaceAltitude(
       props.UPPER_VAL as string | undefined,
-      props.UPPER_UOM as string | undefined
+      props.UPPER_CODE as string | undefined
     ),
     lowerAltitude: formatAirspaceAltitude(
       props.LOWER_VAL as string | undefined,
-      props.LOWER_UOM as string | undefined
+      props.LOWER_CODE as string | undefined
     ),
-    schedule: (props.SCHEDULE as string | undefined) ?? undefined,
+    schedule: (props.TIMESOFUSE as string | undefined) ?? undefined,
     state: (props.STATE as string | undefined) ?? undefined,
     isActive: true,
     source: "sua",
@@ -215,335 +149,106 @@ const fetchSuaZones = async (): Promise<AirspaceZone[]> => {
 };
 
 // ---------------------------------------------------------------------------
-// TFR Fetch (FAA)
+// TFR Fetch (FAA API + GeoServer)
 // ---------------------------------------------------------------------------
 
-/** Parse the TFR list HTML to extract NOTAM IDs. */
-const parseTfrList = (html: string): string[] => {
-  // The TFR list page contains links with NOTAM IDs in various formats.
-  // Look for patterns like detail_X_XXXX.html or NOTAM IDs in the format X/XXXX.
-  const ids: string[] = [];
-  const seen = new Set<string>();
+/** Shape of a single TFR entry from the FAA list API. */
+interface TfrListItem {
+  notam_id: string;
+  facility: string;
+  state: string;
+  type: string;
+  description: string;
+  mod_date: string;
+}
 
-  // Match detail page links: detail_X_XXXX.html
-  const linkRegex = /detail_(\d+_\d+)\.html/gi;
-  let match: RegExpExecArray | null;
-  while ((match = linkRegex.exec(html)) !== null) {
-    const id = match[1];
-    if (!seen.has(id)) {
-      seen.add(id);
-      ids.push(id);
-    }
+/** Shape of GeoServer TFR feature properties. */
+interface TfrGeoProperties {
+  GID: number;
+  CNS_LOCATION_ID: string;
+  NOTAM_KEY: string;
+  TITLE: string;
+  LAST_MODIFICATION_DATETIME: string;
+  STATE: string;
+  LEGAL: string;
+}
+
+/** Fetch all TFR zones by joining the FAA list API with GeoServer geometry. */
+const fetchTfrZones = async (): Promise<AirspaceZone[]> => {
+  // Fetch metadata list and geometries in parallel
+  const [listResponse, geoResponse] = await Promise.all([
+    fetchWithTimeout(TFR_LIST_URL),
+    fetchWithTimeout(TFR_GEO_URL),
+  ]);
+
+  if (!listResponse.ok) {
+    throw new Error(`TFR list API returned status ${listResponse.status}`);
+  }
+  if (!geoResponse.ok) {
+    throw new Error(`TFR GeoServer returned status ${geoResponse.status}`);
   }
 
-  // Also try matching the NOTAM ID format directly (X/XXXX) and convert to X_XXXX
-  if (ids.length === 0) {
-    const notamRegex = /(\d+)\/(\d+)/g;
-    while ((match = notamRegex.exec(html)) !== null) {
-      const id = `${match[1]}_${match[2]}`;
-      if (!seen.has(id)) {
-        seen.add(id);
-        ids.push(id);
-      }
-    }
+  const listData: unknown = await listResponse.json();
+  const geoData: unknown = await geoResponse.json();
+
+  if (!Array.isArray(listData)) {
+    throw new Error("TFR list API did not return an array");
   }
 
-  return ids;
-};
+  if (
+    typeof geoData !== "object" ||
+    geoData === null ||
+    !("features" in geoData) ||
+    !Array.isArray((geoData as Record<string, unknown>).features)
+  ) {
+    throw new Error("TFR GeoServer did not return a valid FeatureCollection");
+  }
 
-/** Parse a TFR detail XML into AirspaceZone(s). */
-const parseTfrDetail = (xml: string, notamId: string): AirspaceZone[] => {
+  const tfrList = listData as TfrListItem[];
+  const geoFeatures = (geoData as { features: Array<{
+    type: string;
+    id: string;
+    geometry: GeoJSON.Geometry;
+    properties: TfrGeoProperties;
+  }> }).features;
+
+  // Build lookup: notam_id -> list metadata
+  const listMap = new Map<string, TfrListItem>();
+  for (const item of tfrList) {
+    listMap.set(item.notam_id, item);
+  }
+
+  // Build zones from GeoServer features, enriched with list metadata
   const zones: AirspaceZone[] = [];
 
-  // Extract top-level metadata
-  const txtName = xmlText(xml, "txtName") ?? notamId.replace("_", "/");
-  const dateEffective = xmlText(xml, "dateEffective");
-  const dateExpire = xmlText(xml, "dateExpire");
+  for (const feature of geoFeatures) {
+    const props = feature.properties;
+    if (!props.NOTAM_KEY || !feature.geometry) continue;
 
-  // Gather description text from multiple possible elements
-  const descriptions = xmlTextAll(xml, "txtDescrUSNS");
-  const codeType = xmlText(xml, "codeType");
-  const descriptionText =
-    descriptions.join(" ").trim() ||
-    xmlText(xml, "txtDescrTraditional") ||
-    xmlText(xml, "txtLocalName") ||
-    "";
+    // Extract base NOTAM ID from key: "6/9526-1-FDC-F" → "6/9526"
+    const baseId = props.NOTAM_KEY.split("-")[0];
+    const listItem = listMap.get(baseId);
 
-  // Classify the TFR type from combined text sources
-  const classificationInput = [
-    codeType ?? "",
-    descriptionText,
-    txtName,
-  ].join(" ");
-  const tfrType = classifyTfr(classificationInput);
+    // Determine type from list API or GeoServer LEGAL field
+    const typeStr = listItem?.type || props.LEGAL || "";
+    const tfrType = mapTfrApiType(typeStr);
 
-  // Parse effective times to ISO strings
-  const effectiveStart = dateEffective
-    ? parseFaaDateTime(dateEffective)
-    : undefined;
-  const effectiveEnd = dateExpire ? parseFaaDateTime(dateExpire) : undefined;
-
-  // Extract TFR areas — each area may have its own geometry
-  const areaBlocks = xmlBlocks(xml, "TFRArea");
-
-  // If no TFRArea blocks found, try parsing the whole document as a single area
-  const blocksToProcess = areaBlocks.length > 0 ? areaBlocks : [xml];
-
-  for (let i = 0; i < blocksToProcess.length; i++) {
-    const block = blocksToProcess[i];
-    const geometry = extractTfrGeometry(block);
-
-    if (!geometry) continue;
-
-    const suffix = blocksToProcess.length > 1 ? `-${i}` : "";
-    const displayId = notamId.replace("_", "/");
+    const title = props.TITLE || listItem?.description || baseId;
 
     const zone: AirspaceZone = {
-      id: `tfr-${notamId}${suffix}`,
-      name: `TFR ${displayId}`,
+      id: `tfr-${props.NOTAM_KEY}`,
+      name: `TFR ${baseId} — ${title}`,
       type: "tfr" as AirspaceType,
       tfrType,
-      geometry: geometry.geojson,
-      description: descriptionText || undefined,
-      effectiveStart,
-      effectiveEnd,
+      geometry: feature.geometry,
+      description: listItem?.description ?? props.TITLE ?? undefined,
+      state: props.STATE || listItem?.state || undefined,
       isActive: true,
       source: "tfr",
     };
 
-    if (geometry.center) {
-      zone.center = geometry.center;
-      zone.radiusNm = geometry.radiusNm;
-    }
-
-    // Extract altitude from the area block
-    const upperVal = xmlText(block, "valDistVerUpper") ?? xmlText(block, "codeDistVerUpper");
-    const upperUom = xmlText(block, "uomDistVerUpper");
-    const lowerVal = xmlText(block, "valDistVerLower") ?? xmlText(block, "codeDistVerLower");
-    const lowerUom = xmlText(block, "uomDistVerLower");
-
-    if (upperVal) zone.upperAltitude = formatAirspaceAltitude(upperVal, upperUom);
-    if (lowerVal) zone.lowerAltitude = formatAirspaceAltitude(lowerVal, lowerUom);
-
     zone.isActive = isZoneActive(zone);
     zones.push(zone);
-  }
-
-  return zones;
-};
-
-interface TfrGeometry {
-  geojson: GeoJSON.Geometry;
-  center?: { lat: number; lon: number };
-  radiusNm?: number;
-}
-
-/** Extract geometry from a TFR area XML block. */
-const extractTfrGeometry = (xml: string): TfrGeometry | null => {
-  // Try circular TFR first (most common)
-  const circleBlock = xmlBlocks(xml, "avxCircle")[0];
-  if (circleBlock) {
-    return parseCircleGeometry(circleBlock);
-  }
-
-  // Try polygon points
-  const polyPoints = extractPolygonPoints(xml);
-  if (polyPoints && polyPoints.length >= 3) {
-    // Close the ring if not already closed
-    const first = polyPoints[0];
-    const last = polyPoints[polyPoints.length - 1];
-    if (first[0] !== last[0] || first[1] !== last[1]) {
-      polyPoints.push([...first]);
-    }
-    return {
-      geojson: {
-        type: "Polygon",
-        coordinates: [polyPoints],
-      },
-    };
-  }
-
-  return null;
-};
-
-/** Parse circular TFR geometry from avxCircle element. */
-const parseCircleGeometry = (circleXml: string): TfrGeometry | null => {
-  // Extract latitude — look for geoLat or latitude in various formats
-  const latStr =
-    xmlText(circleXml, "geoLat") ??
-    xmlText(circleXml, "geoLatCtr") ??
-    xmlText(circleXml, "latitude");
-  const lonStr =
-    xmlText(circleXml, "geoLong") ??
-    xmlText(circleXml, "geoLongCtr") ??
-    xmlText(circleXml, "longitude");
-  const radiusStr =
-    xmlText(circleXml, "valRadius") ??
-    xmlText(circleXml, "codeDistDim");
-  const uom = xmlText(circleXml, "uomRadius") ?? "NM";
-
-  if (!latStr || !lonStr || !radiusStr) return null;
-
-  const lat = parseFaaCoordinate(latStr);
-  const lon = parseFaaCoordinate(lonStr);
-  const radiusRaw = parseFloat(radiusStr);
-
-  if (isNaN(lat) || isNaN(lon) || isNaN(radiusRaw)) return null;
-
-  // Convert to nautical miles if needed
-  const radiusNm = uom.toUpperCase() === "NM" ? radiusRaw : radiusRaw / 1.852;
-
-  // Generate polygon approximation
-  const ring = circleToPolygon(lat, lon, radiusNm);
-
-  return {
-    geojson: {
-      type: "Polygon",
-      coordinates: [ring],
-    },
-    center: { lat, lon },
-    radiusNm,
-  };
-};
-
-/** Extract polygon coordinate points from avxPoly/avxArc elements. */
-const extractPolygonPoints = (xml: string): [number, number][] | null => {
-  const points: [number, number][] = [];
-
-  // Look for individual coordinate pairs in various AIXM element forms
-  const coordBlocks = [
-    ...xmlBlocks(xml, "avxPoly"),
-    ...xmlBlocks(xml, "Avx"),
-  ];
-
-  for (const block of coordBlocks) {
-    const latStr = xmlText(block, "geoLat") ?? xmlText(block, "geoLatArc");
-    const lonStr = xmlText(block, "geoLong") ?? xmlText(block, "geoLongArc");
-
-    if (!latStr || !lonStr) continue;
-
-    const lat = parseFaaCoordinate(latStr);
-    const lon = parseFaaCoordinate(lonStr);
-
-    if (!isNaN(lat) && !isNaN(lon)) {
-      points.push([lon, lat]); // GeoJSON is [lon, lat]
-    }
-  }
-
-  return points.length >= 3 ? points : null;
-};
-
-/**
- * Parse FAA coordinate strings.
- * Supports decimal degrees (e.g., "38.8977") and DMS formats
- * (e.g., "38°53'51.66\"N", "38-53-51.66N", "385351.66N").
- */
-const parseFaaCoordinate = (coord: string): number => {
-  const trimmed = coord.trim();
-
-  // Try decimal degrees first
-  const decimal = parseFloat(trimmed);
-  if (!isNaN(decimal) && /^-?\d+\.?\d*$/.test(trimmed)) {
-    return decimal;
-  }
-
-  // Try DMS format: various separators and hemisphere suffixes
-  // Patterns: "385351.66N", "38-53-51.66N", "38°53'51.66"N"
-  const dmsRegex =
-    /(-?\d{1,3})[°\u002D]?\s*(\d{1,2})['′\u002D]?\s*(\d{1,2}(?:\.\d+)?)[""″]?\s*([NSEW])?/i;
-  const dmsMatch = trimmed.match(dmsRegex);
-  if (dmsMatch) {
-    const deg = parseInt(dmsMatch[1], 10);
-    const min = parseInt(dmsMatch[2], 10);
-    const sec = parseFloat(dmsMatch[3]);
-    const dir = dmsMatch[4]?.toUpperCase();
-
-    let value = Math.abs(deg) + min / 60 + sec / 3600;
-    if (dir === "S" || dir === "W" || deg < 0) value = -value;
-    return value;
-  }
-
-  // Try packed DMS format without separators: "DDMMSS.ssH" or "DDDMMSS.ssH"
-  const packedRegex = /^(-?\d{2,3})(\d{2})(\d{2}(?:\.\d+)?)([NSEW])?$/i;
-  const packedMatch = trimmed.match(packedRegex);
-  if (packedMatch) {
-    const deg = parseInt(packedMatch[1], 10);
-    const min = parseInt(packedMatch[2], 10);
-    const sec = parseFloat(packedMatch[3]);
-    const dir = packedMatch[4]?.toUpperCase();
-
-    let value = Math.abs(deg) + min / 60 + sec / 3600;
-    if (dir === "S" || dir === "W" || deg < 0) value = -value;
-    return value;
-  }
-
-  return parseFloat(trimmed);
-};
-
-/** Parse FAA datetime strings to ISO format. Handles "YYYY-MM-DDTHH:MM:SS" and other FAA formats. */
-const parseFaaDateTime = (dateStr: string): string | undefined => {
-  const trimmed = dateStr.trim();
-  if (!trimmed) return undefined;
-
-  // Already ISO-ish — just ensure it parses
-  const date = new Date(trimmed);
-  if (!isNaN(date.getTime())) {
-    return date.toISOString();
-  }
-
-  // Try FAA format: "MM/DD/YYYY HH:MM"
-  const faaRegex = /(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/;
-  const faaMatch = trimmed.match(faaRegex);
-  if (faaMatch) {
-    const isoStr = `${faaMatch[3]}-${faaMatch[1]}-${faaMatch[2]}T${faaMatch[4]}:${faaMatch[5]}:00Z`;
-    const parsed = new Date(isoStr);
-    if (!isNaN(parsed.getTime())) return parsed.toISOString();
-  }
-
-  return undefined;
-};
-
-/** Fetch all TFR zones from the FAA TFR feed. */
-const fetchTfrZones = async (): Promise<AirspaceZone[]> => {
-  // Step 1: Fetch the TFR list page
-  const listResponse = await fetchWithTimeout(TFR_LIST_URL);
-  if (!listResponse.ok) {
-    throw new Error(`TFR list returned status ${listResponse.status}`);
-  }
-
-  const listHtml = await listResponse.text();
-  const notamIds = parseTfrList(listHtml);
-
-  if (notamIds.length === 0) {
-    return [];
-  }
-
-  // Step 2: Fetch detail XMLs in parallel (with allSettled for resilience)
-  const detailResults = await Promise.allSettled(
-    notamIds.map(async (id) => {
-      const url = `${TFR_DETAIL_BASE}${id}.xml`;
-      const response = await fetchWithTimeout(url, 15_000);
-      if (!response.ok) {
-        throw new Error(`TFR detail ${id} returned status ${response.status}`);
-      }
-      const xml = await response.text();
-      return { id, xml };
-    })
-  );
-
-  // Step 3: Parse each detail XML into AirspaceZone(s)
-  const zones: AirspaceZone[] = [];
-
-  for (const result of detailResults) {
-    if (result.status === "fulfilled") {
-      try {
-        const parsed = parseTfrDetail(result.value.xml, result.value.id);
-        zones.push(...parsed);
-      } catch {
-        // Individual TFR parse failure — skip silently
-      }
-    }
-    // Rejected fetches are silently skipped (allSettled handles them)
   }
 
   return zones;

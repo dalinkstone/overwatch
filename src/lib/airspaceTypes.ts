@@ -167,8 +167,8 @@ export const isZoneActive = (zone: Pick<AirspaceZone, 'source' | 'schedule' | 'e
   // SUA: "CONT" means continuous, always active
   if (zone.schedule?.toUpperCase() === 'CONT') return true;
 
-  // "BY NOTAM" means activation is dynamic — show as potentially active
-  if (zone.schedule?.toUpperCase().includes('NOTAM')) return true;
+  // "BY NOTAM" means activation is dynamic — cannot confirm active without NOTAM data
+  if (zone.schedule?.toUpperCase().includes('NOTAM')) return false;
 
   // If schedule exists but isn't CONT or NOTAM, it's time-based — assume active
   // (full schedule parsing would require day/time parsing which is out of scope)
