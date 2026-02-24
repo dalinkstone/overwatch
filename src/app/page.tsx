@@ -6,11 +6,14 @@ import { StatusBar } from "@/components/StatusBar";
 import { FilterBar } from "@/components/FilterBar";
 import { AircraftPanel } from "@/components/AircraftPanel";
 import { VesselPanel } from "@/components/VesselPanel";
+import { LayerControl } from "@/components/LayerControl";
 import { useAircraftData } from "@/hooks/useAircraftData";
 import { useVesselData } from "@/hooks/useVesselData";
 import { AircraftState } from "@/lib/types";
 import { VesselData } from "@/lib/vesselTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
+
+const VESSEL_LAYER_KEY = "overwatch-vessel-layer";
 
 const matchesSearch = (ac: AircraftState, query: string): boolean => {
   const q = query.toLowerCase();
@@ -49,8 +52,30 @@ const matchesCategory = (ac: AircraftState, filter: string): boolean => {
 
 export default function Home() {
   const { aircraft, loading, error, lastUpdated, totalCount } = useAircraftData();
-  const [vesselEnabled] = useState(true);
-  const { vessels } = useVesselData(vesselEnabled);
+
+  const [vesselEnabled, setVesselEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem(VESSEL_LAYER_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const { vessels, status: vesselStatus } = useVesselData(vesselEnabled);
+
+  const handleVesselToggle = useCallback((enabled: boolean) => {
+    setVesselEnabled(enabled);
+    try {
+      localStorage.setItem(VESSEL_LAYER_KEY, String(enabled));
+    } catch {
+      // localStorage unavailable
+    }
+    if (!enabled) {
+      setSelectedVessel(null);
+      setVesselSignalLost(false);
+      selectedMmsiRef.current = null;
+    }
+  }, []);
 
   const [selectedAircraft, setSelectedAircraft] =
     useState<AircraftState | null>(null);
@@ -178,7 +203,7 @@ export default function Home() {
         <MapWrapper
           aircraft={filteredAircraft}
           onAircraftClick={handleAircraftClick}
-          vessels={vessels}
+          vessels={vesselEnabled ? vessels : []}
           onVesselClick={handleVesselClick}
         />
         {/* Loading overlay */}
@@ -210,6 +235,13 @@ export default function Home() {
           vessel={selectedVessel}
           onClose={handleCloseVesselPanel}
           signalLost={vesselSignalLost}
+        />
+        <LayerControl
+          aircraftCount={filteredAircraft.length}
+          vesselEnabled={vesselEnabled}
+          onVesselToggle={handleVesselToggle}
+          vesselCount={vessels.length}
+          vesselStatus={vesselStatus}
         />
       </div>
     </main>
