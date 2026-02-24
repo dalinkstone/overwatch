@@ -123,7 +123,7 @@ overwatch/
     │   ├── page.tsx             # Home page (placeholder)
     │   └── api/
     │       └── aircraft/
-    │           └── route.ts     # API proxy route (placeholder)
+    │           └── route.ts     # API proxy route (proxies to ADSB.lol)
     ├── components/              # React components (empty, Phase 5+)
     ├── hooks/                   # Custom hooks (empty, Phase 6)
     ├── lib/
@@ -306,6 +306,66 @@ The validation uses `unknown` narrowing (no `any` types) to maintain TypeScript 
 
 ---
 
+## Phase 3: API Proxy Route
+
+Phase 3 implemented the full upstream proxy in `src/app/api/aircraft/route.ts`, replacing the placeholder that previously returned `{ status: "ok" }`. This is the critical server-side bridge between the browser client and the ADSB.lol API.
+
+### `src/app/api/aircraft/route.ts` — Upstream Proxy
+
+Exports a single `GET` handler following Next.js App Router route handler conventions.
+
+#### Request flow
+
+```
+Browser → GET /api/aircraft
+  → Route handler reads NEXT_PUBLIC_API_BASE_URL (default: "https://api.adsb.lol")
+  → Fetches GET {baseUrl}/v2/mil with 15-second AbortController timeout
+  → On success: forwards JSON body with cache headers
+  → On failure: returns structured 502 JSON error
+```
+
+#### Implementation details
+
+1. **Upstream URL configuration** — Reads `process.env.NEXT_PUBLIC_API_BASE_URL`, falling back to `"https://api.adsb.lol"`. This allows switching to `https://api.adsb.one` (identical API) if the primary is down.
+
+2. **15-second timeout** — Uses `AbortController` with `setTimeout`. The timeout is cleared in a `finally` block to prevent timer leaks regardless of success or failure.
+
+3. **Success path** — When the upstream returns HTTP 200, the JSON body is forwarded to the client with:
+   - `Cache-Control: public, s-maxage=5, stale-while-revalidate=10` — allows CDN/proxy caching for 5 seconds, serves stale for up to 10 seconds while revalidating
+   - `Content-Type: application/json`
+
+4. **Non-200 upstream** — If the upstream returns a non-200 status (e.g. 500, 503), the route returns HTTP 502 with:
+   ```json
+   { "error": "Upstream API unavailable", "details": "Upstream returned status 503" }
+   ```
+
+5. **Network/timeout errors** — If the fetch throws (network failure, DNS error, abort from timeout), the route catches the error and returns HTTP 502 with:
+   ```json
+   { "error": "Upstream API unavailable", "details": "The operation was aborted" }
+   ```
+
+6. **Type safety** — The upstream response is typed as `unknown` and forwarded as-is via `NextResponse.json()`. Validation of the response shape is the client's responsibility (handled by `fetchMilitaryAircraft` in `src/lib/api.ts`).
+
+#### Error handling summary
+
+| Condition | HTTP Status | Response Body |
+|---|---|---|
+| Upstream returns 200 | 200 | Forwarded JSON from ADSB.lol |
+| Upstream returns non-200 (e.g. 503) | 502 | `{ error, details: "Upstream returned status 503" }` |
+| Network failure | 502 | `{ error, details: "Failed to fetch" }` |
+| Timeout (>15s) | 502 | `{ error, details: "The operation was aborted" }` |
+| DNS resolution failure | 502 | `{ error, details: <system error message> }` |
+
+#### Verified behavior
+
+Tested with `npm run dev` and `curl http://localhost:3000/api/aircraft`:
+- Returns ~200-800 military aircraft in the `ac` array
+- Response headers include `Cache-Control: public, s-maxage=5, stale-while-revalidate=10`
+- Aircraft objects include `hex`, `lat`, `lon`, `alt_baro`, `gs`, `track`, `t`, `r`, `dbFlags`, etc.
+- TypeScript type-check passes with zero errors
+
+---
+
 ## Module Reference
 
 ### Exports by file
@@ -315,6 +375,7 @@ The validation uses `unknown` narrowing (no `any` types) to maintain TypeScript 
 | `src/lib/types.ts` | `AircraftState`, `AircraftResponse`, `hasPosition`, `isMilitary` | utils.ts, api.ts, all components, hooks |
 | `src/lib/utils.ts` | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` | AircraftMarker, AircraftPanel, StatusBar |
 | `src/lib/api.ts` | `fetchMilitaryAircraft` | useAircraftData hook |
+| `src/app/api/aircraft/route.ts` | `GET` (route handler) | Next.js server (handles `/api/aircraft` requests) |
 
 ### Dependency graph
 
@@ -325,9 +386,11 @@ types.ts  ←── utils.ts
     ├── api.ts │
     │          │
     └── [future components and hooks will import from all three]
+
+api/aircraft/route.ts  (standalone — imports only NextResponse from next/server)
 ```
 
-`types.ts` is the leaf dependency — it imports nothing from the project. `utils.ts` imports only `AircraftState` from `types.ts`. `api.ts` imports only `AircraftResponse` from `types.ts`.
+`types.ts` is the leaf dependency — it imports nothing from the project. `utils.ts` imports only `AircraftState` from `types.ts`. `api.ts` imports only `AircraftResponse` from `types.ts`. The route handler (`api/aircraft/route.ts`) is standalone — it imports only `NextResponse` from `next/server` and has no project-internal dependencies.
 
 ---
 
@@ -390,11 +453,11 @@ npm run lint
 npm run build
 ```
 
-### Current state (after Phase 2)
+### Current state (after Phase 3)
 
-When you open `http://localhost:3000`, you will see a centered "Overwatch" heading. This is the placeholder page — the map, aircraft markers, and live data will be added in Phases 3-6.
+When you open `http://localhost:3000`, you will see a centered "Overwatch" heading. This is the placeholder page — the map, aircraft markers, and live data will be added in Phases 4-6.
 
-The API proxy route at `http://localhost:3000/api/aircraft` currently returns `{ "status": "ok" }` — the full upstream proxy implementation is Phase 3.
+The API proxy route at `http://localhost:3000/api/aircraft` returns live military aircraft data proxied from ADSB.lol. Expect a JSON response with 200-800 aircraft in the `ac` array.
 
 ### Switching the upstream API
 
@@ -483,7 +546,7 @@ No rate limits are currently enforced by ADSB.lol. Overwatch polls at a **10-sec
 
 | Phase | Description | Key Deliverables |
 |---|---|---|
-| 3 | API Proxy Route | Full `/api/aircraft` proxy with upstream fetch, caching, error handling |
+| ~~3~~ | ~~API Proxy Route~~ | ~~Full `/api/aircraft` proxy with upstream fetch, caching, error handling~~ **Done** |
 | 4 | Aircraft Icon | SVG plane silhouette for map markers |
 | 5 | Map Components | `Map.tsx`, `AircraftMarker.tsx`, `MapWrapper.tsx` with Leaflet |
 | 6 | Polling + Integration | `useAircraftData` hook, `StatusBar`, main page wiring |

@@ -8,6 +8,7 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 
 - **Phase 1 (Scaffold):** Complete — project structure, dependencies, configuration
 - **Phase 2 (Types & API Utility Layer):** Complete — TypeScript interfaces, helper functions, API client
+- **Phase 3 (API Proxy Route):** Complete — full upstream proxy with caching, timeout, error handling
 
 ### What's Implemented
 
@@ -16,7 +17,7 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 | `src/lib/types.ts` | Done | `AircraftState`, `AircraftResponse` interfaces; `hasPosition`, `isMilitary` guards |
 | `src/lib/utils.ts` | Done | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` helpers |
 | `src/lib/api.ts` | Done | `fetchMilitaryAircraft` — fetches from local proxy with validation |
-| `src/app/api/aircraft/route.ts` | Placeholder | Returns `{ status: "ok" }` — needs full proxy implementation (Phase 3) |
+| `src/app/api/aircraft/route.ts` | Done | Proxies to ADSB.lol `/v2/mil` with 15s timeout, cache headers, structured 502 errors |
 | `src/app/layout.tsx` | Done | Root layout with metadata and globals.css import |
 | `src/app/page.tsx` | Placeholder | Renders `<h1>Overwatch</h1>` — needs map integration (Phase 5-6) |
 | `src/components/` | Empty | Map, AircraftMarker, StatusBar, etc. not yet created |
@@ -83,6 +84,15 @@ Overwatch is a real-time military aircraft tracker using ADSB.lol's free public 
 ### API Client (src/lib/api.ts)
 
 - `fetchMilitaryAircraft()` — fetches from `/api/aircraft` (local proxy), validates the response shape, throws on HTTP errors or malformed data.
+
+### API Proxy Route (src/app/api/aircraft/route.ts)
+
+- Exports an async `GET` handler using Next.js App Router route handler conventions
+- Reads upstream base URL from `process.env.NEXT_PUBLIC_API_BASE_URL`, defaulting to `"https://api.adsb.lol"`
+- Fetches `GET {baseUrl}/v2/mil` with a 15-second timeout via `AbortController`
+- On success: forwards JSON with `Cache-Control: public, s-maxage=5, stale-while-revalidate=10`
+- On fetch error (network/timeout): returns 502 `{ error: "Upstream API unavailable", details: error.message }`
+- On non-200 upstream: returns 502 with upstream status code in details
 
 ### Leaflet Map
 
