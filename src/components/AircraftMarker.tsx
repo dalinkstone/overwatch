@@ -8,6 +8,12 @@ import {
   formatSpeed,
   formatCallsign,
 } from "@/lib/utils";
+import {
+  getAircraftCategory,
+  getAircraftIconSvg,
+  getCategoryLabel,
+  ICON_SIZES,
+} from "@/lib/aircraftIcons";
 
 interface AircraftMarkerProps {
   aircraft: AircraftState;
@@ -21,14 +27,20 @@ const getAltitudeColor = (alt_baro: number | "ground" | undefined): string => {
   return "#ef4444";
 };
 
-const createPlaneIcon = (track: number, color: string): L.DivIcon => {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="24" height="24" style="transform: rotate(${track}deg)"><path d="M12 1 L10 8 L3 13 L3 15 L10 12 L10 19 L7 21 L7 23 L12 21 L17 23 L17 21 L14 19 L14 12 L21 15 L21 13 L14 8 Z"/></svg>`;
+const createPlaneIcon = (
+  track: number,
+  color: string,
+  typeCode: string | undefined
+): L.DivIcon => {
+  const category = getAircraftCategory(typeCode);
+  const svg = getAircraftIconSvg(category, color);
+  const { size, anchor } = ICON_SIZES[category];
 
   return L.divIcon({
-    html: svg,
+    html: `<div style="transform: rotate(${track}deg); width: ${size[0]}px; height: ${size[1]}px">${svg}</div>`,
     className: "",
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: size,
+    iconAnchor: anchor,
   });
 };
 
@@ -44,11 +56,14 @@ const AircraftMarkerComponent = ({ aircraft, onClick, map }: AircraftMarkerProps
     const lon = aircraft.lon as number;
     const color = getAltitudeColor(aircraft.alt_baro);
     const track = aircraft.track ?? 0;
-    const icon = createPlaneIcon(track, color);
+    const icon = createPlaneIcon(track, color, aircraft.t);
+    const category = getAircraftCategory(aircraft.t);
+    const categoryLabel = getCategoryLabel(category);
 
     const popupContent = `<div style="font-size:13px;line-height:1.5">
       <div style="font-weight:bold;font-size:14px">${formatCallsign(aircraft.flight)}</div>
       ${aircraft.t ? `<div>Type: ${aircraft.t}</div>` : ""}
+      <div>Category: ${categoryLabel}</div>
       ${aircraft.r ? `<div>Reg: ${aircraft.r}</div>` : ""}
       <div>Alt: ${formatAltitude(aircraft.alt_baro)}</div>
       <div>Speed: ${formatSpeed(aircraft.gs)}</div>

@@ -14,6 +14,7 @@ It is a Next.js 14 App Router project in TypeScript with Tailwind CSS.
 - **Phase 5 (Map Components):** Complete — AircraftMarker, Map, MapWrapper with dynamic import (no SSR)
 - **Phase 6 (Polling + Integration):** Complete — useAircraftData hook, StatusBar, page wiring, live data on map
 - **Phase 7 (Detail Panel):** Complete — AircraftPanel slide-in, aircraft selection, signal lost tracking, isMilitary filtering
+- **Phase 8 (Aircraft Icons):** Complete — AircraftCategory type system, ICAO type code mapping, category-specific SVG silhouettes, icon size rules, AircraftMarker + AircraftPanel integration
 
 ### What's Implemented
 
@@ -25,10 +26,11 @@ It is a Next.js 14 App Router project in TypeScript with Tailwind CSS.
 | `src/app/api/aircraft/route.ts` | Done | Proxies to ADSB.lol `/v2/mil` with 15s timeout, cache headers, structured 502 errors |
 | `src/app/layout.tsx` | Done | Root layout with metadata and globals.css import |
 | `src/app/page.tsx` | Done | Client component with useAircraftData hook, StatusBar, MapWrapper, and AircraftPanel selection |
-| `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with DivIcon inline SVG, altitude-based coloring, track rotation, popup with details |
+| `src/lib/aircraftIcons.ts` | Done | `AircraftCategory` type, `AIRCRAFT_TYPE_MAP`, `getAircraftCategory()`, `ICON_SIZES`, `getAircraftIconSvg()`, `getCategoryLabel()` |
+| `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with category-specific DivIcon SVG silhouettes, altitude-based coloring, track rotation, popup with category badge |
 | `src/components/Map.tsx` | Done | Client component with `MapContainer`, `TileLayer`, renders `AircraftMarker` for each positioned aircraft |
 | `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
-| `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel for selected aircraft with all fields, signal lost indicator, close button |
+| `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel for selected aircraft with all fields, signal lost indicator, category badge, close button |
 | `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, last updated time, connection status with colored indicator |
 | `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by isMilitary + hasPosition, preserves data on failure |
 
@@ -36,7 +38,6 @@ It is a Next.js 14 App Router project in TypeScript with Tailwind CSS.
 
 | File | Status | Description |
 |---|---|---|
-| `src/lib/aircraftIcons.ts` | Planned | Aircraft category classification and SVG icon mapping |
 | `src/lib/maritimeTypes.ts` | Planned | Vessel type interfaces and classification |
 | `src/lib/dataLayers.ts` | Planned | Unified data layer toggle system |
 | `src/app/api/vessels/route.ts` | Planned | Maritime AIS proxy route |
@@ -102,33 +103,35 @@ Aircraft are categorized by ICAO type code (`t` field) into visual categories, e
 
 | Category | Icon Shape | Example Types | Color Scheme |
 |---|---|---|---|
-| `fighter` | Swept-wing jet silhouette | F16, F15, F18, F22, F35, A10, F117, SU27 | Same altitude-based coloring |
-| `tanker-transport` | Wide-body high-wing silhouette | KC135, KC46, KC10, C17, C5, C130, C40, C37, C12 | Same altitude-based coloring |
-| `helicopter` | Rotor disc + fuselage silhouette | UH60, AH64, CH47, CH53, V22, HH60, MH60 | Same altitude-based coloring |
-| `surveillance` | Aircraft with radome/dish silhouette | E3, E8, E6, RC135, EP3, P8, P3, U2, RQ4 | Same altitude-based coloring |
-| `trainer` | Small single-engine silhouette | T38, T6, T45, T1, PC12 | Same altitude-based coloring |
-| `bomber` | Large swept-wing silhouette | B52, B1, B2, B21 | Same altitude-based coloring |
-| `uav` | Small delta/flying wing silhouette | RQ4, MQ9, MQ1, RQ7 | Same altitude-based coloring |
-| `unknown` | Generic aircraft (current icon) | Anything not matched | Same altitude-based coloring |
+| `fighter` | Swept-wing jet silhouette (narrow, aggressive) | F16, F15, F22, F35, A10, FA18, EF2K, TORN, SU27, F14, RFAL | Same altitude-based coloring |
+| `tanker-transport` | Straight-wing transport (wide, heavy) | KC135, K35R, KC46, C17, C5M, C130, C30J, A400, AN124, C145 | Same altitude-based coloring |
+| `helicopter` | Rotor disc circle + fuselage + tail boom | UH60, AH64, CH47, V22, H60, H64, EC45, EC35, S70, A109 | Same altitude-based coloring |
+| `surveillance` | Transport with radome disc on fuselage | E3, E8, E6, RC135, P8, U2, E2, EA18G, JSTAR, MC12, E11A | Same altitude-based coloring |
+| `trainer` | Small simple straight-wing (smallest icon) | T38, T6, T45, PC12, T7, PC21, PC7, PC9 | Same altitude-based coloring |
+| `bomber` | Large swept-wing (widest, heaviest icon) | B52, B1, B2, B21 | Same altitude-based coloring |
+| `uav` | Long thin wings, tiny body, V-tail | RQ4, MQ9, MQ1, MQ4, HRON, MQ25, XQ58 | Same altitude-based coloring |
+| `unknown` | Generic moderate aircraft (fallback) | Anything not matched | Same altitude-based coloring |
 
 #### Type Code Mapping (`src/lib/aircraftIcons.ts`)
 
-The mapping function `getAircraftCategory(typeCode: string | undefined): AircraftCategory` uses a lookup table of known ICAO type codes. The lookup should be case-insensitive and handle partial matches where sensible (e.g., any code starting with "F15" matches fighter, covering F15, F15C, F15E, etc.).
+The mapping function `getAircraftCategory(typeCode: string | undefined): AircraftCategory` uses a lookup table of 90+ known ICAO type codes. The lookup is case-insensitive, checks exact match first, then tries prefix matches from longest to shortest (minimum 2 characters). For example, "F15E" → exact match fighter; "H53S" → prefix "H53" → helicopter; "C27J" → prefix "C2" → tanker-transport. Also exports `getCategoryLabel(category)` for human-readable display names.
 
 Each category maps to a distinct SVG string via `getAircraftIconSvg(category: AircraftCategory, color: string): string` which returns inline SVG markup (same pattern as the current DivIcon approach).
 
 #### Icon Size Rules
 
+Intentionally large for instant visual recognition at map zoom levels 4-8. Each SVG includes a thin semi-transparent black stroke (`stroke="#000" stroke-opacity="0.3" stroke-width="0.5"`) for visibility against both light and dark map backgrounds.
+
 | Category | Icon Size | Anchor |
 |---|---|---|
-| `fighter` | 24×24 | 12×12 |
-| `tanker-transport` | 32×32 | 16×16 |
-| `helicopter` | 24×24 | 12×12 |
-| `surveillance` | 28×28 | 14×14 |
-| `trainer` | 20×20 | 10×10 |
-| `bomber` | 32×32 | 16×16 |
-| `uav` | 20×20 | 10×10 |
-| `unknown` | 24×24 | 12×12 |
+| `fighter` | 36×36 | 18×18 |
+| `tanker-transport` | 42×42 | 21×21 |
+| `helicopter` | 38×38 | 19×19 |
+| `surveillance` | 42×42 | 21×21 |
+| `trainer` | 30×30 | 15×15 |
+| `bomber` | 44×44 | 22×22 |
+| `uav` | 32×32 | 16×16 |
+| `unknown` | 34×34 | 17×17 |
 
 ### TypeScript Types (src/lib/types.ts)
 

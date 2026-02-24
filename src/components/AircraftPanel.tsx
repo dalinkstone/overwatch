@@ -2,6 +2,7 @@
 
 import { AircraftState } from "@/lib/types";
 import { formatAltitude, formatSpeed, formatCallsign } from "@/lib/utils";
+import { getAircraftCategory, getCategoryLabel } from "@/lib/aircraftIcons";
 
 interface AircraftPanelProps {
   aircraft: AircraftState | null;
@@ -92,6 +93,12 @@ export const AircraftPanel = ({
             <DetailRow label="ICAO Hex" value={aircraft.hex.toUpperCase()} />
             <DetailRow label="Registration" value={aircraft.r ?? "N/A"} />
             <DetailRow label="Type" value={aircraft.t ?? "N/A"} />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-zinc-400">Category</span>
+              <span className="rounded-full bg-cyan-900/50 px-2.5 py-0.5 text-xs font-medium text-cyan-300">
+                {getCategoryLabel(getAircraftCategory(aircraft.t))}
+              </span>
+            </div>
             <div className="border-t border-zinc-700" />
             <DetailRow
               label="Altitude"
