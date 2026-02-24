@@ -9,6 +9,7 @@ interface StatusBarProps {
   vesselCount?: number;
   satelliteEnabled?: boolean;
   satelliteCount?: number;
+  satelliteError?: string | null;
 }
 
 const formatTime = (date: Date): string => {
@@ -29,6 +30,7 @@ export const StatusBar = ({
   vesselCount,
   satelliteEnabled,
   satelliteCount,
+  satelliteError,
 }: StatusBarProps) => {
   return (
     <div className="flex items-center justify-between bg-zinc-900 px-4 py-2.5 text-xs text-white">
@@ -80,6 +82,12 @@ export const StatusBar = ({
               <span className="text-zinc-500">Satellites:</span>{" "}
               <span className="font-mono">{satelliteCount.toLocaleString()}</span>
             </span>
+          </>
+        )}
+        {satelliteEnabled && satelliteError && (
+          <>
+            <span className="text-zinc-600">|</span>
+            <span className="text-amber-400">Satellite data unavailable</span>
           </>
         )}
       </div>

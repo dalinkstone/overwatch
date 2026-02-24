@@ -10,7 +10,9 @@ Overwatch aggregates multiple publicly available data sources to create a compre
 
 **Maritime Vessel Tracking** — The vessel layer connects to [aisstream.io](https://aisstream.io/) via a server-side WebSocket for real-time AIS data. Vessels are rendered with ship-shaped markers color-coded by type (cargo, tanker, military, etc.). Military vessels are identified via AIS type codes, name patterns, and MMSI prefixes. The layer is toggleable and requires a free API key.
 
-Additional planned data layers include satellite orbit visualization, conflict event mapping, and airspace restriction overlays.
+**Satellite Tracking** — The satellite layer fetches orbital element data from [CelesTrak](https://celestrak.org/) and computes real-time positions client-side using the SGP4 propagation algorithm via satellite.js. Military-relevant satellites are displayed as colored diamond markers, categorized into reconnaissance, SIGINT, communications, navigation (GPS/GLONASS/BeiDou/Galileo), early warning, weather, and foreign military. No API key required.
+
+Additional planned data layers include conflict event mapping and airspace restriction overlays.
 
 All aircraft data comes from **ADS-B (Automatic Dependent Surveillance-Broadcast)** — a technology where aircraft broadcast their GPS position, identity, and flight parameters on 1090 MHz. Volunteer-run ground receivers collect these signals and feed them to aggregators like ADSB.lol. This data is inherently public; it is broadcast unencrypted over open radio frequencies.
 
@@ -90,17 +92,28 @@ Aircraft are rendered with type-specific silhouette icons based on their ICAO ty
 
 **Coverage:** Terrestrial AIS only (~200km from coastlines). Ports, shipping lanes, and chokepoints have excellent coverage. Open ocean has gaps. Vessels in the middle of the ocean won't appear.
 
-### Layer 3: Military Satellites (Planned)
-
-**What is TLE data?** Two-Line Element sets are compact orbital parameter descriptions that allow computing a satellite's position at any point in time using the SGP4 propagation algorithm.
+### Layer 3: Military Satellites (Active)
 
 | Source | URL | Auth | Status |
 |---|---|---|---|
-| CelesTrak | `https://celestrak.org/NORAD/elements/` | None | Primary candidate |
-| Space-Track.org | `https://www.space-track.org/` | Free account | Backup |
-| N2YO | `https://www.n2yo.com/rest/v1/satellite/` | Free API key | Backup |
+| CelesTrak | `https://celestrak.org/NORAD/elements/gp.php` | None | Active |
 
-**CelesTrak provides free, no-auth access** to military satellite TLE catalogs, GPS constellation data, and the full active satellite catalog. Position computation is done client-side using the `satellite.js` library (JavaScript SGP4 propagator).
+**CelesTrak provides free, no-auth access** to military satellite orbital element data in OMM JSON format. The API route fetches 10 catalog groups in parallel (military, GPS, GLONASS, BeiDou, Galileo, SBAS, NNSS, MUSSON, TDRSS, GEO), filters the GEO catalog to military-relevant satellites, and deduplicates by NORAD catalog ID.
+
+Position computation is done **client-side** using the `satellite.js` library (JavaScript SGP4 propagator). Orbital elements are fetched every 30 minutes, and positions are recomputed every 30 seconds from cached TLE data.
+
+#### Satellite Categories
+
+| Category | Color | Examples |
+|---|---|---|
+| Reconnaissance | Red | KH-11, Topaz, YAOGAN |
+| SIGINT/ELINT | Orange | MENTOR/Orion, TRUMPET, NOSS |
+| Communications | Blue | AEHF, Milstar, MUOS, WGS |
+| Navigation | Green | GPS, GLONASS, BeiDou, Galileo |
+| Early Warning | Yellow | SBIRS, DSP, Tundra |
+| Weather | Cyan | DMSP, NOAA, GOES |
+| Foreign Military | Purple | COSMOS, SHIYAN, SHIJIAN |
+| Other Military | Light Purple | Unclassified military |
 
 ### Layer 4: Conflict Events (Planned)
 
@@ -141,7 +154,7 @@ Real-time seismic data as GeoJSON. Supplementary awareness layer — large seism
 | **HTTP** | Native `fetch` | No extra dependencies |
 | **WebSocket** | `ws` (server-side) | aisstream.io connection |
 | **Linting** | ESLint 10 (flat config) + typescript-eslint | Consistent code |
-| **Satellites** | satellite.js (planned) | SGP4 orbit propagation |
+| **Satellites** | satellite.js | SGP4 orbit propagation from orbital elements |
 
 ### Why These Choices
 
@@ -171,22 +184,28 @@ overwatch/
 │   │   └── api/
 │   │       ├── aircraft/
 │   │       │   └── route.ts     # Proxy to ADSB.lol /v2/mil
-│   │       └── vessels/
-│   │           └── route.ts     # Serves cached vessel data from aisStreamManager
+│   │       ├── vessels/
+│   │       │   └── route.ts     # Serves cached vessel data from aisStreamManager
+│   │       └── satellites/
+│   │           └── route.ts     # Proxy to CelesTrak GP endpoints (10 catalogs, 30-min cache)
 │   ├── components/
-│   │   ├── Map.tsx              # Leaflet map with aircraft + vessel rendering (client, no SSR)
+│   │   ├── Map.tsx              # Leaflet map with aircraft + vessel + satellite rendering (client, no SSR)
 │   │   ├── MapWrapper.tsx       # Dynamic import wrapper for Map (ssr: false)
 │   │   ├── AircraftMarker.tsx   # Aircraft marker with type-specific icons
 │   │   ├── AircraftPanel.tsx    # Aircraft detail panel (sidebar/bottom sheet)
 │   │   ├── VesselMarker.tsx     # Vessel marker with ship silhouette icon
 │   │   ├── VesselPanel.tsx      # Vessel detail panel (sidebar/bottom sheet)
+│   │   ├── SatelliteMarker.tsx  # Satellite diamond marker with category colors + GEO glow
+│   │   ├── SatellitePanel.tsx   # Satellite detail panel (sidebar/bottom sheet, purple accent)
 │   │   ├── FilterBar.tsx        # Aircraft search + altitude/category filters
 │   │   ├── VesselFilterBar.tsx  # Vessel country + category filters
-│   │   ├── LayerControl.tsx     # Floating layer toggle panel (aircraft/vessels)
-│   │   └── StatusBar.tsx        # Connection status + counts
+│   │   ├── SatelliteFilterBar.tsx # Satellite search + category/orbit filters (purple accent)
+│   │   ├── LayerControl.tsx     # Floating layer toggle panel (aircraft/vessels/satellites)
+│   │   └── StatusBar.tsx        # Connection status + counts + satellite error indicator
 │   ├── hooks/
 │   │   ├── useAircraftData.ts   # Aircraft polling hook (10s interval)
-│   │   └── useVesselData.ts     # Vessel polling hook (15s interval, toggleable)
+│   │   ├── useVesselData.ts     # Vessel polling hook (15s interval, toggleable)
+│   │   └── useSatelliteData.ts  # Satellite TLE fetch (30min) + SGP4 propagation (30s), toggleable
 │   ├── lib/
 │   │   ├── api.ts               # Aircraft fetch wrapper
 │   │   ├── types.ts             # Aircraft TypeScript interfaces
@@ -195,7 +214,9 @@ overwatch/
 │   │   ├── countryLookup.ts     # ICAO hex-to-country lookup + flag emoji
 │   │   ├── env.ts               # Server-side environment helpers (API key access)
 │   │   ├── vesselTypes.ts       # Vessel interfaces, MID lookup, military identification
-│   │   └── aisStreamManager.ts  # Server-side WebSocket singleton for aisstream.io
+│   │   ├── aisStreamManager.ts  # Server-side WebSocket singleton for aisstream.io
+│   │   ├── satelliteTypes.ts    # Satellite interfaces, category classification, formatting
+│   │   └── satellitePropagator.ts # SGP4 propagation via satellite.js
 │   └── styles/
 │       └── globals.css          # Tailwind directives
 └── public/
@@ -226,6 +247,21 @@ The vessel tracking layer requires a free API key from aisstream.io:
 Without an API key, the vessel layer toggle will appear disabled with an "API key required" message. All other features work normally.
 
 Once enabled, click the "Vessels" toggle in the bottom-left layer control panel. Vessels will start appearing within 30-60 seconds as the WebSocket stream populates. Coverage is best near coastlines, ports, and major shipping lanes.
+
+### Satellite Tracking
+
+No API key needed — satellite tracking works out of the box.
+
+1. Click the "Satellites" toggle in the bottom-left layer control panel
+2. Satellites appear as colored diamond markers across the globe
+3. Click any satellite for details (orbit info, NORAD ID, altitude, velocity)
+4. Use the purple filter bar to search by name/NORAD ID, filter by category or orbit type
+
+**How it works:** Orbital elements (OMM data) are fetched from CelesTrak every 30 minutes. Satellite positions are then computed client-side from these orbital elements using the SGP4 algorithm (via satellite.js) every 30 seconds. This means positions update smoothly without constant server requests.
+
+**Categories:** Reconnaissance, SIGINT/ELINT, Communications, Navigation (GPS/GLONASS/BeiDou/Galileo), Early Warning, Weather, Foreign Military, Other Military.
+
+**Data source:** [CelesTrak](https://celestrak.org/) — free, no authentication required. Derived from the US Space Command public satellite catalog.
 
 ## Environment Variables
 

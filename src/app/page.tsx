@@ -98,7 +98,7 @@ export default function Home() {
   const { vessels, status: vesselStatus } = useVesselData(vesselEnabled);
 
   const [satelliteEnabled, setSatelliteEnabled] = useState(false);
-  const { satellites } = useSatelliteData(satelliteEnabled);
+  const { satellites, error: satelliteError } = useSatelliteData(satelliteEnabled);
 
   // Hydrate layer toggles from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
@@ -389,6 +389,7 @@ export default function Home() {
         vesselCount={filteredVessels.length}
         satelliteEnabled={satelliteEnabled}
         satelliteCount={filteredSatellites.length}
+        satelliteError={satelliteError}
       />
       <FilterBar
         searchQuery={searchQuery}

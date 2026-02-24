@@ -27,7 +27,14 @@ const createSatelliteIcon = (
   const size = isGeo(satellite.period) ? 20 : 16;
   const anchor = size / 2;
 
+  const geo = isGeo(satellite.period);
+  const glow = geo
+    ? `<circle cx="8" cy="8" r="7" fill="none" stroke="${color}" stroke-opacity="0.25" stroke-width="0.8" />
+       <circle cx="8" cy="8" r="5.5" fill="none" stroke="${color}" stroke-opacity="0.15" stroke-width="0.5" />`
+    : "";
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 16 16">
+    ${glow}
     <rect x="4" y="4" width="8" height="8" rx="1"
       transform="rotate(45 8 8)"
       fill="${color}" stroke="#000" stroke-opacity="0.3" stroke-width="0.5" />

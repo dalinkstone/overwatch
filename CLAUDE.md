@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Overwatch is a real-time military movement intelligence dashboard using publicly available data sources. It currently tracks military aircraft via ADSB.lol and maritime vessels via aisstream.io, rendered on an interactive Leaflet.js map. Additional planned layers include satellite orbit tracking, conflict event data, and airspace restriction overlays.
+Overwatch is a real-time military movement intelligence dashboard using publicly available data sources. It currently tracks military aircraft via ADSB.lol, maritime vessels via aisstream.io, and military satellites via CelesTrak, rendered on an interactive Leaflet.js map. Additional planned layers include conflict event data and airspace restriction overlays.
 
 It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 
@@ -18,6 +18,7 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 - **Phase 9 (Filter Bar):** Complete — search by callsign/reg/hex/type, altitude band filter, category filter, aircraft count display
 - **Phase 10 (Polish):** Complete — loading/error/empty states, favicon, page metadata, ADSB.lol attribution, responsive mobile layout, ESLint flat config migration
 - **Phase 12 (Maritime Vessel Tracking):** Complete — aisstream.io WebSocket API, vessel markers/panel/filters, layer toggle with localStorage persistence, viewport filtering, zoom gate
+- **Phase 13 (Satellite Tracking):** Complete — CelesTrak OMM data, satellite.js SGP4 propagation, diamond markers with category coloring, detail panel, filter bar, layer toggle, GEO glow effect, 10 catalog groups
 
 ### What's Implemented
 
@@ -35,29 +36,34 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 | `src/app/api/vessels/route.ts` | Done | REST endpoint serving cached vessel data from aisStreamManager; returns vessels array + connection status; no-store cache |
 | `src/app/layout.tsx` | Done | Root layout with metadata ("Overwatch — Military Movement Tracker"), favicon, globals.css import |
 | `src/app/icon.svg` | Done | SVG favicon — amber aircraft silhouette on dark background |
-| `src/app/page.tsx` | Done | Client component integrating both aircraft and vessel layers — useAircraftData, useVesselData, StatusBar, FilterBar, VesselFilterBar, MapWrapper, AircraftPanel, VesselPanel, LayerControl, loading/error/empty overlays, localStorage-persisted vessel toggle |
+| `src/app/page.tsx` | Done | Client component integrating aircraft, vessel, and satellite layers — useAircraftData, useVesselData, useSatelliteData, StatusBar, FilterBar, VesselFilterBar, SatelliteFilterBar, MapWrapper, AircraftPanel, VesselPanel, SatellitePanel, LayerControl, loading/error/empty overlays, localStorage-persisted layer toggles |
 | `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by hasPosition, preserves data on failure |
 | `src/hooks/useVesselData.ts` | Done | Polls `/api/vessels` every 15s when enabled, returns vessels + militaryVessels + connection status, preserves data on failure |
 | `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with category-specific DivIcon SVG silhouettes, altitude-based coloring, track rotation, popup with country flag + category badge |
 | `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel — right sidebar on desktop, bottom sheet on mobile (<768px), signal lost indicator, country flag badge, category badge |
-| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders AircraftMarker + VesselMarker, viewport-filtered vessel rendering with zoom gate (zoom >= 4), custom vessel pane (z-index 450), includes ADSB.lol + ADS-B Radar + aisstream.io attribution |
+| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders AircraftMarker + VesselMarker + SatelliteMarker, viewport-filtered vessel/satellite rendering with zoom gates (vessels >= 4, satellites >= 3), custom panes (satellites z-440, vessels z-450), includes ADSB.lol + ADS-B Radar + aisstream.io + CelesTrak attribution |
 | `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
-| `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, vessel count (when layer active), last updated time, connection status with colored indicator |
+| `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, vessel count (when layer active), satellite count (when layer active), satellite error indicator (amber text), last updated time, connection status with colored indicator |
 | `src/components/FilterBar.tsx` | Done | Search (callsign/reg/hex/type), altitude band filter, category filter, aircraft count — responsive (full-width search on mobile) |
 | `src/components/VesselMarker.tsx` | Done | `React.memo`'d marker with top-down ship SVG silhouette, heading/COG rotation, military vessels larger (28px) + red, civilian vessels (20px) + category color, popup with flag + category + speed + destination |
 | `src/components/VesselPanel.tsx` | Done | Slide-in detail panel — same layout as AircraftPanel (right sidebar desktop, bottom sheet mobile), shows vessel name, MMSI, flag badge, military category badge, type, speed, course, heading, destination, coordinates, last update, signal lost indicator |
 | `src/components/VesselFilterBar.tsx` | Done | Vessel layer filter bar — country/flag dropdown (dynamically populated), vessel type/category dropdown, vessel count display, blue accent styling |
-| `src/components/LayerControl.tsx` | Done | Floating bottom-left panel — aircraft row (always on, green dot, count), vessel row (toggleable switch, blue accent, connection status dot, count with filter info), disabled state with "API key required" message |
+| `src/components/LayerControl.tsx` | Done | Floating bottom-left panel — aircraft row (always on, green dot, count), vessel row (toggleable switch, blue accent, connection status dot, count with filter info), satellite row (toggleable switch, purple accent, status dot), disabled state with "API key required" message for vessels |
+| `src/lib/satelliteTypes.ts` | Done | `SatelliteOMM`, `SatellitePosition` interfaces; `SatelliteCategory` type; `getSatelliteCategory()` (NORAD ID lookup + name pattern matching); `formatAltitude()`, `formatPeriod()`, `getOrbitType()`; `SATELLITE_COLORS`, `SATELLITE_CATEGORY_LABELS` |
+| `src/lib/satellitePropagator.ts` | Done | `propagateSatellites()` using satellite.js SGP4 — converts OMM records to real-time lat/lon/altitude via `json2satrec` → `propagate` → `eciToGeodetic`; validates results, skips invalid TLEs |
+| `src/app/api/satellites/route.ts` | Done | Proxy to CelesTrak GP endpoints — fetches 10 catalog groups in parallel (military, GPS, GLONASS, BeiDou, Galileo, SBAS, NNSS, MUSSON, TDRSS, GEO), filters GEO to military-relevant names, merges/deduplicates by NORAD_CAT_ID; 30-min cache |
+| `src/hooks/useSatelliteData.ts` | Done | TLE fetch from `/api/satellites` every 30 min + client-side SGP4 propagation every 30s; toggleable via `enabled` param; returns positions, loading, error, totalCount |
+| `src/components/SatelliteMarker.tsx` | Done | `React.memo`'d diamond-shaped SVG marker, category-colored, GEO satellites larger (20px) with subtle glow ring, LEO/MEO (16px); popup with name, category badge, NORAD ID, altitude, period, inclination |
+| `src/components/SatellitePanel.tsx` | Done | Slide-in detail panel (right sidebar desktop, bottom sheet mobile), purple accent; shows orbit info (altitude, period, inclination, orbit type, velocity), identification (NORAD ID, intl designator, epoch), position, category badge, signal lost indicator |
+| `src/components/SatelliteFilterBar.tsx` | Done | Search (name/NORAD ID), category dropdown, orbit type filter (LEO/MEO/GEO), satellite count; purple accent styling |
 | `eslint.config.mjs` | Done | ESLint 10 flat config with `@eslint/js` + `typescript-eslint` |
 
 ### What's Planned
 
 | File | Status | Description |
 |---|---|---|
-| `src/app/api/satellites/route.ts` | Planned | Satellite TLE/position proxy route |
 | `src/app/api/conflicts/route.ts` | Planned | Conflict event data proxy route |
 | `src/app/api/notams/route.ts` | Planned | NOTAM/TFR proxy route |
-| `src/components/SatelliteMarker.tsx` | Planned | Satellite orbit/position marker |
 | `src/components/ConflictMarker.tsx` | Planned | Conflict event marker |
 
 ## Commands
@@ -121,6 +127,48 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
   }
   ```
 
+### Satellite Tracking (CelesTrak + satellite.js)
+
+- **Data source:** CelesTrak provides free, no-auth orbital element data in OMM (Orbit Mean-Elements Message) JSON format
+- **Base URL:** `https://celestrak.org/NORAD/elements/gp.php?FORMAT=json&GROUP={group}`
+- **Catalog groups fetched:** `military`, `gps-ops`, `glo-ops`, `beidou`, `galileo`, `sbas`, `nnss`, `musson`, `tdrss`, `geo` (10 groups, ~300-400 satellites after filtering/dedup)
+- **GEO filtering:** The `geo` group (~600+ satellites) is filtered to only military-relevant names using regex patterns (USA, MUOS, AEHF, WGS, SBIRS, DSP, COSMOS, YAOGAN, etc.)
+- **Deduplication:** Merged by `NORAD_CAT_ID` with earlier catalog groups taking priority (military catalog first)
+
+**SGP4 Propagation Pipeline (client-side):**
+1. OMM JSON records fetched from `/api/satellites` proxy route (cached 30 min)
+2. `json2satrec(ommRecord)` — converts OMM to satellite.js internal satellite record
+3. `propagate(satrec, now)` — computes ECI (Earth-Centered Inertial) position and velocity
+4. `eciToGeodetic(positionECI, gmst)` — converts to geodetic lat/lon/altitude using GMST (Greenwich Mean Sidereal Time)
+5. `radiansToDegrees()` — converts to degrees for map display
+6. Invalid propagations (NaN values, stale TLEs) are silently skipped
+
+**Polling intervals:**
+- TLE refresh: every 30 minutes (CelesTrak updates ~3x/day; do not poll more than every 2 hours per their policy, but our 30-min client interval + 30-min server cache means at most 1 request per 30 min)
+- Position propagation: every 30 seconds (client-side SGP4 recomputation from cached TLEs)
+
+**Satellite categories (8 types):**
+
+| Category | Color | Examples |
+|---|---|---|
+| `reconnaissance` | Red (#ef4444) | KH-11 (CRYSTAL), Topaz (FIA-Radar), YAOGAN |
+| `sigint` | Orange (#f97316) | MENTOR/Orion, TRUMPET, NOSS/INTRUDER |
+| `communications` | Blue (#3b82f6) | AEHF, Milstar, MUOS, WGS, SDS |
+| `navigation` | Green (#22c55e) | GPS (NAVSTAR), GLONASS, BeiDou, Galileo |
+| `early-warning` | Yellow (#eab308) | SBIRS GEO, DSP, STSS, Tundra (EKS) |
+| `weather` | Cyan (#06b6d4) | DMSP, NOAA, GOES, Fengyun |
+| `foreign-military` | Purple (#8b5cf6) | COSMOS, SHIYAN, SHIJIAN |
+| `other-military` | Light purple (#a855f7) | Unclassified military |
+
+**Classification logic:** NORAD catalog ID lookup (80+ known satellites with definitive classification) → name pattern matching (navigation, comms, early warning, weather, SIGINT, reconnaissance, foreign military patterns) → default to `other-military`.
+
+**Marker visual:**
+- Diamond-shaped SVG icon (rotated square)
+- GEO satellites (period > 1400 min): 20px with subtle glow ring effect
+- LEO/MEO satellites: 16px
+- Custom map pane at z-index 440 (below vessels at 450, below aircraft at 600)
+- Zoom gate: satellites only render at zoom >= 3
+
 ### Aircraft Icon Classification System
 
 Aircraft are categorized by ICAO type code (`t` field) into visual categories, each with a distinct SVG silhouette icon sourced from the [ADS-B Radar](https://adsb-radar.com) icon set (free for personal/commercial use with attribution).
@@ -177,8 +225,9 @@ Country flags are displayed in the AircraftMarker popup and AircraftPanel detail
 | ADS-B Radar | Aircraft SVG icon silhouettes | Free with attribution — [adsb-radar.com](https://adsb-radar.com) |
 | tar1090 | ICAO hex-to-country range data | MIT |
 | aisstream.io | AIS vessel tracking data | Free API key |
+| CelesTrak | Satellite orbital element data (OMM/TLE) | Free, no auth — [celestrak.org](https://celestrak.org) |
 
-Attribution is displayed in the map tile layer: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io`
+Attribution is displayed in the map tile layer: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io | Satellite data: CelesTrak`
 
 ### TypeScript Types (src/lib/types.ts)
 
@@ -215,10 +264,21 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - Returns `{ vessels, status }` with `Cache-Control: no-store` (real-time data, never cache)
 - On error: returns 500 with `{ error: "Failed to fetch vessel data", details: message }`
 
+### API Route — Satellites (src/app/api/satellites/route.ts)
+
+- Exports an async `GET` handler
+- Fetches 10 CelesTrak catalog groups in parallel: `military`, `gps-ops`, `glo-ops`, `beidou`, `galileo`, `sbas`, `nnss`, `musson`, `tdrss`, `geo`
+- Each group fetched with 30-second timeout via `AbortController`
+- GEO catalog (~600+ satellites) filtered to only military-relevant names using regex patterns
+- All catalogs validated with `isValidOMM()` type guard, merged and deduplicated by `NORAD_CAT_ID`
+- On success: returns `{ satellites, count, partial, timestamp }` with `Cache-Control: public, s-maxage=1800, stale-while-revalidate=3600`
+- On all catalogs failing: returns 502 `{ error: "CelesTrak unavailable", details }`
+- `partial: true` flag when some (but not all) catalogs fail — graceful partial degradation
+
 ### Leaflet Map
 
 - Tile URL: `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`
-- Attribution: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io`
+- Attribution: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io | Satellite data: CelesTrak`
 - Map is created using vanilla Leaflet (`L.map`, `L.tileLayer`) — not react-leaflet components
 - Leaflet CSS must be imported: `import 'leaflet/dist/leaflet.css'`
 - Custom plane icon using Leaflet's `DivIcon` with inline SVG rotated by the aircraft's `track` heading
@@ -239,12 +299,26 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
   - Rotation by `heading` (falls back to `cog` when heading is 511/unavailable)
   - Popup displays: name, MMSI, country flag, category, speed, course, heading, destination, military badge
   - Custom memo comparator: only re-renders when lat, lon, heading, cog, sog, or lastUpdate changes
-- **Map.tsx** — `"use client"` component importing Leaflet CSS, creates map via `L.map` + `L.tileLayer`, renders `AircraftMarker` per positioned aircraft (keyed by `hex`) and `VesselMarker` per vessel (keyed by MMSI)
+- **SatelliteMarker.tsx** — `React.memo`'d client component receiving `SatellitePosition`, `onClick`, `map`, `pane`
+  - Diamond-shaped SVG icon (rotated square with center dot)
+  - Category-colored from `SATELLITE_COLORS`
+  - GEO satellites (period > 1400 min): 20px with subtle concentric glow rings
+  - LEO/MEO satellites: 16px standard
+  - Popup displays: name, category badge, NORAD ID, altitude, period, inclination
+  - Custom memo comparator: only re-renders when lat, lon, altitude, or category changes
+- **SatellitePanel.tsx** — Slide-in detail panel with purple accent (`purple-400`)
+  - Same layout as AircraftPanel/VesselPanel (right sidebar desktop, bottom sheet mobile)
+  - Displays: satellite name, NORAD ID, category badge (color-coded), orbit info (altitude, period, inclination, orbit type, velocity), identification (NORAD catalog ID, intl designator, epoch), position (lat/lon/altitude), signal lost indicator
+- **SatelliteFilterBar.tsx** — Satellite layer filter bar with purple accent (`#a855f7`)
+  - Search input (name or NORAD ID), category dropdown, orbit type filter (LEO/MEO/GEO), satellite count display
+  - Purple focus ring styling to distinguish from aircraft/vessel filter bars
+- **Map.tsx** — `"use client"` component importing Leaflet CSS, creates map via `L.map` + `L.tileLayer`, renders `AircraftMarker` per positioned aircraft (keyed by `hex`), `VesselMarker` per vessel (keyed by MMSI), and `SatelliteMarker` per satellite (keyed by `noradId`)
   - Map center/zoom read from env vars with defaults (38.9, -77.0, zoom 5)
-  - Attribution includes OpenStreetMap, ADSB.lol, ADS-B Radar, and aisstream.io
+  - Attribution includes OpenStreetMap, ADSB.lol, ADS-B Radar, aisstream.io, and CelesTrak
+  - Custom satellite pane with z-index 440 (below vessel pane at 450, below aircraft marker pane at 600)
   - Custom vessel pane with z-index 450 (below aircraft marker pane at 600)
-  - Viewport filtering: tracks map bounds via `moveend`/`zoomend` events, only renders vessels within the current viewport for performance with 2000+ markers
-  - Zoom gate: vessel markers only render at zoom >= 4; shows "Zoom in to see vessels" notice when zoomed out
+  - Viewport filtering: tracks map bounds via `moveend`/`zoomend` events, only renders vessels and satellites within the current viewport
+  - Zoom gates: vessel markers at zoom >= 4, satellite markers at zoom >= 3; shows "Zoom in" notices when zoomed out
 - **MapWrapper.tsx** — uses `next/dynamic` to import `Map` with `{ ssr: false }`, shows "Loading map..." placeholder
   - This is what `page.tsx` renders — never import `Map.tsx` directly from a server component
 
@@ -271,12 +345,24 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - When `enabled` transitions false→true: fetches immediately and starts polling
 - On failure: sets error, preserves previous vessel data, continues polling
 
+#### useSatelliteData (src/hooks/useSatelliteData.ts)
+
+- `useSatelliteData(enabled: boolean)` — custom hook that fetches OMM data from `/api/satellites` every 30 minutes and propagates positions every 30 seconds
+- Returns `{ satellites, loading, error, lastUpdated, totalCount }`
+- `satellites` is `SatellitePosition[]` — computed real-time positions from cached OMM records
+- When `enabled` is false: stops all intervals (TLE fetch + propagation)
+- When `enabled` transitions false→true: fetches TLEs immediately, starts both intervals
+- Propagation interval reads current OMM data via `setOmmData` callback pattern (no stale closure)
+- On failure: sets error, preserves previous satellite positions, continues polling
+- Cleanup: clears both intervals on unmount or disable
+
 ### StatusBar (src/components/StatusBar.tsx)
 
 - Fixed to top of viewport, dark background (`zinc-900`), white text, small font
-- Left side: "OVERWATCH" brand + total count (from API response), tracked count (aircraft with positions), vessel count (when layer active, blue accent)
+- Left side: "OVERWATCH" brand + total count (from API response), tracked count (aircraft with positions), vessel count (when layer active, blue accent), satellite count (when layer active)
 - Right side: last updated time (HH:MM:SS), connection status (green/red dot + message)
-- Props: `totalCount`, `positionCount`, `lastUpdated`, `error`, `vesselEnabled?`, `vesselCount?`
+- When satellite layer is enabled but has an error: shows "Satellite data unavailable" in amber text
+- Props: `totalCount`, `positionCount`, `lastUpdated`, `error`, `vesselEnabled?`, `vesselCount?`, `satelliteEnabled?`, `satelliteCount?`, `satelliteError?`
 
 ### AircraftPanel (src/components/AircraftPanel.tsx)
 
@@ -327,16 +413,22 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - **Vessel row:** ship icon, "Vessels (count)" or "Vessels (filtered of total)" label, toggle switch, connection status dot
   - Status dot colors: green = connected, yellow = connecting/reconnecting, red = error, gray = off/disabled
   - When `state === 'disabled'` (no API key): toggle grayed out, not clickable, shows "API key required" text
+- **Satellite row:** diamond icon (purple), "Satellites (count)" or "Satellites (filtered of total)" label, toggle switch, status dot
+  - Status dot: green = data loaded, yellow = loading, gray = off
+  - No API key required — satellites always available
 - Vessel toggle state persisted to `localStorage` key `'overwatch-vessel-layer'`
-- Props: `aircraftCount`, `vesselEnabled`, `onVesselToggle`, `vesselCount`, `vesselTotalCount?`, `vesselStatus`
+- Satellite toggle state persisted to `localStorage` key `'overwatch-satellite-layer'`
+- Props: `aircraftCount`, `vesselEnabled`, `onVesselToggle`, `vesselCount`, `vesselTotalCount?`, `vesselStatus`, `satelliteEnabled`, `onSatelliteToggle`, `satelliteCount`, `satelliteTotalCount?`
 
 ### Page Integration (src/app/page.tsx)
 
 - **Aircraft selection:** `selectedAircraft` + `signalLost` state, updates on each poll by matching `hex`, keeps last known state with signal lost indicator if aircraft disappears
 - **Vessel selection:** `selectedVessel` + `vesselSignalLost` state, same pattern as aircraft — updates by MMSI match, signal lost on disappearance
-- **Mutual exclusivity:** clicking an aircraft closes the vessel panel and vice versa; only one detail panel open at a time
+- **Satellite selection:** `selectedSatellite` + `satelliteSignalLost` state, same pattern — updates by NORAD ID match on each propagation cycle
+- **Mutual exclusivity:** clicking any marker closes all other panels; only one detail panel open at a time
 - **Vessel layer toggle:** state hydrated from `localStorage` after mount (avoids SSR mismatch), passed to `useVesselData(enabled)`, turning off clears vessel selection and filters
-- **Independent filtering:** aircraft filters (search, altitude, category, country, speed) and vessel filters (country, category, speed, destination) operate independently via separate `useMemo` chains
+- **Satellite layer toggle:** state hydrated from `localStorage` after mount, passed to `useSatelliteData(enabled)`, turning off clears satellite selection and filters
+- **Independent filtering:** aircraft filters (search, altitude, category, country, speed), vessel filters (country, category, speed, destination), and satellite filters (search, category, orbit type) operate independently via separate `useMemo` chains
 - **Aircraft countries:** dynamically computed from ICAO hex via `getCountryFromHex()`, sorted alphabetically
 - **Vessel countries:** dynamically computed from live vessel data, excluding "Unknown" entries, sorted alphabetically
 
@@ -382,24 +474,6 @@ aisstream.io WSS → aisStreamManager (server singleton) → /api/vessels GET �
 ---
 
 ## Additional Data Layers (Planned)
-
-### Satellite Tracking
-
-**Data Source Options:**
-
-| Source | URL | Auth | Notes |
-|---|---|---|---|
-| **CelesTrak** | `https://celestrak.org/NORAD/elements/` | None | Free TLE data, no account needed |
-| Space-Track.org | `https://www.space-track.org/` | Free account | Official DoD catalog, requires registration |
-| N2YO | `https://www.n2yo.com/rest/v1/satellite/` | Free API key | Real-time positions, easy REST API |
-| **Wheretheiss.at** | `https://api.wheretheiss.at/v1/satellites/` | None | Limited to a few satellites |
-
-**Implementation:** Use CelesTrak for TLE (Two-Line Element) data. Parse TLEs with a JavaScript SGP4 propagator library (e.g., `satellite.js`) to compute real-time lat/lon/altitude from orbital elements. Focus on military-relevant satellites: GPS constellation, reconnaissance (KH-series), SIGINT, early warning (SBIRS/DSP), communications (MUOS, AEHF, Milstar).
-
-**CelesTrak military-relevant catalogs:**
-- `https://celestrak.org/NORAD/elements/gp.php?GROUP=military&FORMAT=json` — Military satellites
-- `https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=json` — GPS constellation
-- `https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json` — All active satellites
 
 ### Conflict/Event Data
 
@@ -460,6 +534,12 @@ The vessel layer uses a variation where the proxy route reads from a server-side
 aisstream.io WSS → aisStreamManager (singleton) → /api/vessels GET → useVesselData → Map
 ```
 
+The satellite layer uses a hybrid approach — the server-side proxy fetches and caches TLE data, while position computation happens client-side:
+
+```
+CelesTrak → /api/satellites GET (30-min cache) → useSatelliteData → satellite.js SGP4 (every 30s) → Map
+```
+
 ### Layer Toggle System
 
 The `LayerControl` component allows users to enable/disable data layers independently. Layer state is managed in `page.tsx` and persisted to `localStorage`.
@@ -467,9 +547,10 @@ The `LayerControl` component allows users to enable/disable data layers independ
 **Currently implemented layers:**
 - **Aircraft** — always on (core feature, no toggle)
 - **Vessels** — toggleable, defaults to off, persisted to `localStorage` key `'overwatch-vessel-layer'`
+- **Satellites** — toggleable, defaults to off, persisted to `localStorage` key `'overwatch-satellite-layer'`
 
 **Planned layers (not yet implemented):**
-- Satellites, Conflicts, NOTAMs, Seismic — each will follow the same toggle pattern
+- Conflicts, NOTAMs, Seismic — each will follow the same toggle pattern
 
 Each disabled layer stops polling (clears its interval) to conserve bandwidth and API calls.
 
@@ -498,12 +579,7 @@ typescript-eslint
 prettier
 ws
 @types/ws
-```
-
-### Approved for future phases (install only when implementing that phase):
-
-```
-satellite.js           # SGP4 propagator for satellite position calculation (Satellite layer)
+satellite.js
 ```
 
 ## Testing Approach
@@ -526,8 +602,12 @@ satellite.js           # SGP4 propagator for satellite position calculation (Sat
 - The `/v2/mil` endpoint typically returns 200-800 aircraft. This is small enough that no virtualization is needed for markers.
 - Vessel markers use viewport filtering — only vessels within the current map bounds are rendered, supporting 2000+ concurrent vessels
 - Zoom gate on vessel markers: only rendered at zoom level >= 4 to avoid overwhelming the map at world view
+- Satellite markers use viewport filtering — only satellites within the current map bounds are rendered
+- Zoom gate on satellite markers: only rendered at zoom level >= 3
 - Use `React.memo` on all marker components to prevent unnecessary re-renders when state hasn't changed.
 - VesselMarker uses a custom memo comparator checking only lat, lon, heading, cog, sog, lastUpdate
+- SatelliteMarker uses a custom memo comparator checking only lat, lon, altitude, category
+- Satellite position propagation is done client-side (no server round-trip needed between TLE fetches)
 - Do not store historical positions in this MVP — each poll replaces state entirely.
-- Each data layer has independent polling intervals appropriate to its data freshness needs (aircraft: 10s, vessels: 15s).
+- Each data layer has independent polling intervals appropriate to its data freshness needs (aircraft: 10s, vessels: 15s, satellite TLEs: 30min, satellite positions: 30s).
 - Disabled layers do not poll at all.
