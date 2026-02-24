@@ -1,6 +1,6 @@
 # IMPLEMENTATION.md — Overwatch Technical Implementation Guide
 
-Comprehensive technical documentation for the Overwatch military aircraft tracker. This document covers architecture decisions, data flow, every implemented module, and instructions for local development.
+Comprehensive technical documentation for the Overwatch military movement tracker. This document covers architecture decisions, data flow, every implemented module, planned data layers, and instructions for local development.
 
 ---
 
@@ -16,62 +16,76 @@ Comprehensive technical documentation for the Overwatch military aircraft tracke
 8. [Local Development Setup](#local-development-setup)
 9. [Toolchain and Build Pipeline](#toolchain-and-build-pipeline)
 10. [Data Source: ADSB.lol API](#data-source-adsblol-api)
-11. [Remaining Phases](#remaining-phases)
+11. [Phase 8: Aircraft-Type-Specific Icons](#phase-8-aircraft-type-specific-icons)
+12. [Additional Data Layers](#additional-data-layers)
+13. [Remaining Phases](#remaining-phases)
 
 ---
 
 ## System Architecture
 
-Overwatch follows a three-layer architecture:
+Overwatch follows a multi-layer architecture with independent data pipelines:
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   Browser Client                 │
-│  ┌───────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │ Leaflet   │  │ React    │  │ Polling Hook │  │
-│  │ Map + OSM │  │ UI Layer │  │ (10s interval)│  │
-│  └───────────┘  └──────────┘  └──────┬───────┘  │
-│                                      │           │
-│                              fetch("/api/aircraft")
-│                                      │           │
-└──────────────────────────────────────┼───────────┘
-                                       │
-┌──────────────────────────────────────┼───────────┐
-│              Next.js Server          │           │
-│  ┌───────────────────────────────────▼────────┐  │
-│  │  /api/aircraft  (Route Handler)            │  │
-│  │  - Proxies to upstream API                 │  │
-│  │  - Adds caching headers                    │  │
-│  │  - Returns structured error JSON on failure│  │
-│  └───────────────────────────────────┬────────┘  │
-│                                      │           │
-└──────────────────────────────────────┼───────────┘
-                                       │
-                              GET /v2/mil
-                                       │
-                                       ▼
-                          ┌────────────────────┐
-                          │   api.adsb.lol     │
-                          │  (Public ADS-B API)│
-                          │  No auth required  │
-                          └────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                        Browser Client                         │
+│  ┌───────────┐  ┌──────────┐  ┌────────────────────────────┐ │
+│  │ Leaflet   │  │ React    │  │ Data Layer Hooks           │ │
+│  │ Map + OSM │  │ UI Layer │  │ • useAircraftData (10s)    │ │
+│  │ + Markers │  │          │  │ • useVesselData (30s)      │ │
+│  │ + Overlays│  │          │  │ • useSatelliteData (5min)  │ │
+│  └───────────┘  └──────────┘  │ • useConflictData (15min)  │ │
+│                               └─────────┬──────────────────┘ │
+│                                         │                     │
+│                              fetch("/api/{layer}")            │
+│                                         │                     │
+└─────────────────────────────────────────┼─────────────────────┘
+                                          │
+┌─────────────────────────────────────────┼─────────────────────┐
+│               Next.js Server            │                     │
+│  ┌──────────────────────────────────────▼──────────────────┐  │
+│  │  Proxy Routes (one per data source)                     │  │
+│  │  /api/aircraft    → api.adsb.lol/v2/mil                │  │
+│  │  /api/vessels     → AIS data source                     │  │
+│  │  /api/satellites  → celestrak.org                       │  │
+│  │  /api/conflicts   → api.gdeltproject.org                │  │
+│  │  /api/notams      → external-api.faa.gov                │  │
+│  │                                                         │  │
+│  │  Each route: caching headers, timeout, error handling   │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                               │
+└───────────────────────────────────────────────────────────────┘
+                              │
+           ┌──────────────────┼──────────────────┐
+           ▼                  ▼                  ▼
+   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+   │ api.adsb.lol │  │ celestrak.org│  │ GDELT API    │  ...
+   │ (ADS-B data) │  │ (TLE data)  │  │ (events)     │
+   │ No auth      │  │ No auth     │  │ No auth      │
+   └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
 ### Key Architecture Decisions
 
-1. **API Proxy Pattern** — The browser never calls `api.adsb.lol` directly. All requests route through `/api/aircraft` on the Next.js server. This provides a single point for caching, error handling, rate limiting, and allows swapping the upstream API without client changes.
+1. **API Proxy Pattern** — The browser never calls external APIs directly. All requests route through proxy routes on the Next.js server. This provides a single point for caching, error handling, rate limiting, and allows swapping upstream APIs without client changes.
 
-2. **Server Components by Default** — Next.js App Router uses React Server Components. Only components that need browser APIs (Leaflet, hooks, event handlers) are marked `"use client"`.
+2. **Independent Data Layers** — Each data source has its own proxy route, polling hook, marker component, and type definitions. Layers fail independently — if one API goes down, the others keep working.
 
-3. **Dynamic Leaflet Import** — Leaflet accesses the `window` object and will crash during server-side rendering. It must be imported via `next/dynamic` with `{ ssr: false }`.
+3. **Server Components by Default** — Next.js App Router uses React Server Components. Only components that need browser APIs (Leaflet, hooks, event handlers) are marked `"use client"`.
 
-4. **Full State Replacement** — Each poll replaces the entire aircraft state array. The API returns a complete snapshot, so there is no delta/merge logic. This keeps the data model simple and avoids stale ghost aircraft.
+4. **Dynamic Leaflet Import** — Leaflet accesses the `window` object and will crash during server-side rendering. It must be imported via `next/dynamic` with `{ ssr: false }`.
 
-5. **No API Keys** — ADSB.lol is a free, open-source API that requires no authentication. The project has zero secrets to manage.
+5. **Full State Replacement** — Each poll replaces the entire state array for that layer. The APIs return complete snapshots, so there is no delta/merge logic. This keeps the data model simple and avoids stale ghost entities.
+
+6. **No Paid API Keys** — All data sources are free and either require no authentication or only free registration. The project has zero paid secrets to manage.
+
+7. **Aircraft-Type-Specific Icons** — Aircraft are classified by ICAO type code into categories (fighter, transport, helicopter, etc.) with distinct SVG silhouette icons, making it visually immediate what kind of aircraft is where.
 
 ---
 
 ## Data Flow
+
+### Aircraft Layer (Primary)
 
 ```
 1. Browser tab opens
@@ -80,19 +94,34 @@ Overwatch follows a three-layer architecture:
 4. Next.js route handler → GET https://api.adsb.lol/v2/mil
 5. ADSB.lol returns JSON: { ac: [...], total: N, ... }
 6. Route handler forwards JSON to client (with cache headers)
-7. Client parses response, filters for aircraft with positions
-8. React state updates → Leaflet markers re-render on map
-9. setInterval fires after 10 seconds → repeat from step 3
+7. Client parses response, filters for military aircraft with positions
+8. Each aircraft classified by type code → category → icon shape
+9. React state updates → Leaflet markers re-render on map with type-specific icons
+10. setInterval fires after 10 seconds → repeat from step 3
+```
+
+### Additional Layers (Same Pattern)
+
+```
+1. Layer toggle enabled by user
+2. useLayerData hook mounts
+3. Immediate fetch → GET /api/{layer}
+4. Next.js route handler → GET {upstream API}
+5. Response parsed and filtered
+6. Layer-specific markers rendered on map
+7. setInterval at layer-specific interval → repeat
+8. Layer toggle disabled → clearInterval, markers removed
 ```
 
 ### Error Path
 
 ```
-3. fetch("/api/aircraft") fails OR returns non-200
+3. fetch("/api/{layer}") fails OR returns non-200
    → Hook sets error state string
-   → Previous aircraft remain displayed on map
-   → StatusBar shows "Connection lost" with red indicator
+   → Previous data remains displayed on map
+   → StatusBar shows layer-specific error
    → Next interval fires → retry from step 3
+   → Other layers unaffected
 ```
 
 ---
@@ -104,7 +133,7 @@ overwatch/
 ├── CLAUDE.md                    # Claude Code conventions and rules
 ├── IMPLEMENTATION.md            # This file — detailed implementation docs
 ├── README.md                    # Project overview and quick start
-├── PLAN.md                      # Sequential build prompts (10 phases)
+├── PLAN.md                      # Sequential build prompts (16 phases)
 ├── package.json                 # Dependencies and scripts
 ├── package-lock.json            # Locked dependency tree
 ├── tsconfig.json                # TypeScript strict config
@@ -120,22 +149,44 @@ overwatch/
 └── src/
     ├── app/
     │   ├── layout.tsx           # Root HTML layout + metadata
-    │   ├── page.tsx             # Main page — StatusBar + MapWrapper with live data
+    │   ├── page.tsx             # Main page — multi-layer map dashboard
     │   └── api/
-    │       └── aircraft/
-    │           └── route.ts     # API proxy route (proxies to ADSB.lol)
+    │       ├── aircraft/
+    │       │   └── route.ts     # Proxy to ADSB.lol (active)
+    │       ├── vessels/
+    │       │   └── route.ts     # Proxy to AIS data (planned)
+    │       ├── satellites/
+    │       │   └── route.ts     # Proxy to CelesTrak (planned)
+    │       ├── conflicts/
+    │       │   └── route.ts     # Proxy to GDELT (planned)
+    │       └── notams/
+    │           └── route.ts     # Proxy to FAA (planned)
     ├── components/
-    │   ├── AircraftMarker.tsx   # React.memo'd Leaflet marker with plane SVG
+    │   ├── AircraftMarker.tsx   # Type-specific Leaflet marker with SVG icons
     │   ├── AircraftPanel.tsx    # Slide-in detail panel for selected aircraft
-    │   ├── Map.tsx              # Leaflet MapContainer with TileLayer + markers
+    │   ├── Map.tsx              # Leaflet MapContainer with all layer markers
     │   ├── MapWrapper.tsx       # Dynamic import wrapper (ssr: false)
-    │   └── StatusBar.tsx        # Top bar: counts, last updated, connection status
+    │   ├── StatusBar.tsx        # Top bar: counts, last updated, connection status
+    │   ├── FilterBar.tsx        # Search + filters (planned)
+    │   ├── LayerControl.tsx     # Data layer toggles (planned)
+    │   ├── VesselMarker.tsx     # Ship marker (planned)
+    │   ├── SatelliteMarker.tsx  # Satellite marker (planned)
+    │   ├── ConflictMarker.tsx   # Conflict event marker (planned)
+    │   └── NotamOverlay.tsx     # TFR polygon overlay (planned)
     ├── hooks/
-    │   └── useAircraftData.ts   # Polling hook — fetches aircraft every 10s
+    │   ├── useAircraftData.ts   # Aircraft polling hook (active)
+    │   ├── useVesselData.ts     # Vessel polling hook (planned)
+    │   ├── useSatelliteData.ts  # Satellite data hook (planned)
+    │   └── useConflictData.ts   # Conflict event hook (planned)
     ├── lib/
     │   ├── types.ts             # AircraftState, AircraftResponse, type guards
     │   ├── api.ts               # fetchMilitaryAircraft client function
-    │   └── utils.ts             # Formatting helpers
+    │   ├── utils.ts             # Formatting helpers
+    │   ├── aircraftIcons.ts     # Type classification + SVG icon mapping (Phase 8)
+    │   ├── maritimeTypes.ts     # Vessel interfaces (planned)
+    │   ├── satelliteTypes.ts    # Satellite interfaces (planned)
+    │   ├── conflictTypes.ts     # Conflict event interfaces (planned)
+    │   └── dataLayers.ts        # Layer toggle system (planned)
     └── styles/
         └── globals.css          # Tailwind base/components/utilities directives
 ```
@@ -241,8 +292,6 @@ Pure functions with no side effects. Each takes raw API data and returns a displ
 
 #### `formatAltitude(alt: number | "ground" | undefined): string`
 
-Handles the three possible states of barometric altitude:
-
 | Input | Output |
 |---|---|
 | `undefined` | `"N/A"` |
@@ -308,13 +357,13 @@ The client-side function that retrieves aircraft data. It fetches from `/api/air
 | Response missing `ac` array | `"Malformed aircraft API response: missing 'ac' array"` |
 | Network failure | Native `TypeError` from `fetch` (e.g. `"Failed to fetch"`) |
 
-The validation uses `unknown` narrowing (no `any` types) to maintain TypeScript strict mode compliance. The response is cast to `AircraftResponse` only after confirming the `ac` array exists.
+The validation uses `unknown` narrowing (no `any` types) to maintain TypeScript strict mode compliance.
 
 ---
 
 ## Phase 3: API Proxy Route
 
-Phase 3 implemented the full upstream proxy in `src/app/api/aircraft/route.ts`, replacing the placeholder that previously returned `{ status: "ok" }`. This is the critical server-side bridge between the browser client and the ADSB.lol API.
+Phase 3 implemented the full upstream proxy in `src/app/api/aircraft/route.ts`.
 
 ### `src/app/api/aircraft/route.ts` — Upstream Proxy
 
@@ -332,43 +381,20 @@ Browser → GET /api/aircraft
 
 #### Implementation details
 
-1. **Upstream URL configuration** — Reads `process.env.NEXT_PUBLIC_API_BASE_URL`, falling back to `"https://api.adsb.lol"`. This allows switching to `https://api.adsb.one` (identical API) if the primary is down.
-
-2. **15-second timeout** — Uses `AbortController` with `setTimeout`. The timeout is cleared in a `finally` block to prevent timer leaks regardless of success or failure.
-
-3. **Success path** — When the upstream returns HTTP 200, the JSON body is forwarded to the client with:
-   - `Cache-Control: public, s-maxage=5, stale-while-revalidate=10` — allows CDN/proxy caching for 5 seconds, serves stale for up to 10 seconds while revalidating
-   - `Content-Type: application/json`
-
-4. **Non-200 upstream** — If the upstream returns a non-200 status (e.g. 500, 503), the route returns HTTP 502 with:
-   ```json
-   { "error": "Upstream API unavailable", "details": "Upstream returned status 503" }
-   ```
-
-5. **Network/timeout errors** — If the fetch throws (network failure, DNS error, abort from timeout), the route catches the error and returns HTTP 502 with:
-   ```json
-   { "error": "Upstream API unavailable", "details": "The operation was aborted" }
-   ```
-
-6. **Type safety** — The upstream response is typed as `unknown` and forwarded as-is via `NextResponse.json()`. Validation of the response shape is the client's responsibility (handled by `fetchMilitaryAircraft` in `src/lib/api.ts`).
+1. **Upstream URL configuration** — Reads `process.env.NEXT_PUBLIC_API_BASE_URL`, falling back to `"https://api.adsb.lol"`.
+2. **15-second timeout** — Uses `AbortController` with `setTimeout`. Cleared in `finally` block.
+3. **Success path** — HTTP 200 forwarded with `Cache-Control: public, s-maxage=5, stale-while-revalidate=10`
+4. **Non-200 upstream** — Returns HTTP 502 with upstream status in details
+5. **Network/timeout errors** — Caught and returned as HTTP 502
 
 #### Error handling summary
 
 | Condition | HTTP Status | Response Body |
 |---|---|---|
 | Upstream returns 200 | 200 | Forwarded JSON from ADSB.lol |
-| Upstream returns non-200 (e.g. 503) | 502 | `{ error, details: "Upstream returned status 503" }` |
+| Upstream returns non-200 | 502 | `{ error, details: "Upstream returned status {N}" }` |
 | Network failure | 502 | `{ error, details: "Failed to fetch" }` |
 | Timeout (>15s) | 502 | `{ error, details: "The operation was aborted" }` |
-| DNS resolution failure | 502 | `{ error, details: <system error message> }` |
-
-#### Verified behavior
-
-Tested with `npm run dev` and `curl http://localhost:3000/api/aircraft`:
-- Returns ~200-800 military aircraft in the `ac` array
-- Response headers include `Cache-Control: public, s-maxage=5, stale-while-revalidate=10`
-- Aircraft objects include `hex`, `lat`, `lon`, `alt_baro`, `gs`, `track`, `t`, `r`, `dbFlags`, etc.
-- TypeScript type-check passes with zero errors
 
 ---
 
@@ -379,15 +405,16 @@ Tested with `npm run dev` and `curl http://localhost:3000/api/aircraft`:
 | Module | Exports | Used by |
 |---|---|---|
 | `src/lib/types.ts` | `AircraftState`, `AircraftResponse`, `hasPosition`, `isMilitary` | utils.ts, api.ts, all components, hooks |
-| `src/lib/utils.ts` | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` | AircraftMarker |
+| `src/lib/utils.ts` | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` | AircraftMarker, AircraftPanel |
 | `src/lib/api.ts` | `fetchMilitaryAircraft` | useAircraftData hook |
+| `src/lib/aircraftIcons.ts` | `AircraftCategory`, `getAircraftCategory`, `getAircraftIconSvg`, `ICON_SIZES`, `AIRCRAFT_TYPE_MAP` | AircraftMarker, AircraftPanel, FilterBar |
 | `src/hooks/useAircraftData.ts` | `useAircraftData` | page.tsx |
 | `src/components/AircraftPanel.tsx` | `AircraftPanel` | page.tsx |
 | `src/components/StatusBar.tsx` | `StatusBar` | page.tsx |
 | `src/components/MapWrapper.tsx` | `MapWrapper` | page.tsx |
 | `src/components/Map.tsx` | `default` (Map) | MapWrapper (via dynamic import) |
 | `src/components/AircraftMarker.tsx` | `AircraftMarker` | Map.tsx |
-| `src/app/api/aircraft/route.ts` | `GET` (route handler) | Next.js server (handles `/api/aircraft` requests) |
+| `src/app/api/aircraft/route.ts` | `GET` (route handler) | Next.js server |
 
 ### Dependency graph
 
@@ -403,9 +430,9 @@ types.ts  ←── utils.ts
     │    │
     ├── page.tsx ──→ StatusBar.tsx
     │    │
-    │    └──→ AircraftPanel.tsx
-    │    │
-    │    └──→ MapWrapper.tsx ──→ Map.tsx ──→ AircraftMarker.tsx
+    │    └──→ AircraftPanel.tsx ←── aircraftIcons.ts
+    │    │                              ↑
+    │    └──→ MapWrapper.tsx ──→ Map.tsx ──→ AircraftMarker.tsx ←── aircraftIcons.ts
     │                                            ↑
     │                                            │
     └────────────────────────────────────────────┘
@@ -417,19 +444,15 @@ api/aircraft/route.ts  (standalone — imports only NextResponse from next/serve
 
 ## Environment Configuration
 
-All environment variables are defined in `.env.example` and should be copied to `.env.local` for local development.
-
 | Variable | Default | Used Where | Description |
 |---|---|---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | `https://api.adsb.lol` | API route handler (server) | Base URL for the upstream ADS-B API |
 | `POLL_INTERVAL_MS` | `10000` | Polling hook (client) | Milliseconds between data refreshes |
-| `NEXT_PUBLIC_DEFAULT_LAT` | `38.9` | Map component (client) | Default map center latitude (Washington DC area) |
+| `NEXT_PUBLIC_DEFAULT_LAT` | `38.9` | Map component (client) | Default map center latitude |
 | `NEXT_PUBLIC_DEFAULT_LNG` | `-77.0` | Map component (client) | Default map center longitude |
-| `NEXT_PUBLIC_DEFAULT_ZOOM` | `5` | Map component (client) | Default map zoom level (continental US view) |
+| `NEXT_PUBLIC_DEFAULT_ZOOM` | `5` | Map component (client) | Default map zoom level |
 
-Variables prefixed with `NEXT_PUBLIC_` are available in both server and client code. `POLL_INTERVAL_MS` (without the prefix) is server-only by default.
-
-**No API keys are needed.** ADSB.lol is a free, open-source API with no authentication.
+**No paid API keys are needed.** All current and planned data sources are free.
 
 ---
 
@@ -478,25 +501,17 @@ npm run build
 
 When you open `http://localhost:3000`, you will see:
 
-1. A dark status bar at the top showing total aircraft count, tracked (positioned) count, last updated time, and a green connection indicator
+1. A dark status bar at the top showing total aircraft count, tracked count, last updated time, and connection indicator
 2. A full-screen Leaflet map with plane icons for military aircraft
 3. Plane icons colored by altitude: green (ground), blue (<10,000 ft), red (>=10,000 ft), rotated to match heading
 4. Data refreshes automatically every 10 seconds (only confirmed military aircraft shown)
-5. Clicking a plane shows a popup with callsign, type, registration, altitude, and speed
-6. Clicking a plane also opens a slide-in detail panel on the right with comprehensive aircraft info
-7. If a selected aircraft disappears from data, a "Signal lost" indicator appears in the panel
+5. Clicking a plane shows a popup and opens a slide-in detail panel
+6. If a selected aircraft disappears from data, a "Signal lost" indicator appears
 
-The API proxy route at `http://localhost:3000/api/aircraft` returns live military aircraft data proxied from ADSB.lol. Expect a JSON response with 200-800 aircraft in the `ac` array.
+### After Phase 8 (aircraft icons), you will additionally see:
 
-### Switching the upstream API
-
-If `api.adsb.lol` is down, edit `.env.local`:
-
-```
-NEXT_PUBLIC_API_BASE_URL=https://api.adsb.one
-```
-
-The fallback API uses identical endpoints and response format.
+7. Different icon shapes for different aircraft types (fighters, transports, helicopters, etc.)
+8. Aircraft category badges in the detail panel and popups
 
 ---
 
@@ -510,14 +525,7 @@ The fallback API uses identical endpoints and response format.
 | ESLint | 8.x | Code linting with `next/core-web-vitals` rules |
 | Leaflet | 1.9.x | Interactive map rendering (loaded client-side only) |
 | react-leaflet | 4.2.x | React bindings for Leaflet components |
-
-### Build process
-
-1. `next build` runs TypeScript compilation, tree-shaking, and bundles the app
-2. Server components are rendered at build time or request time
-3. Client components (map, hooks) are bundled into browser JavaScript
-4. Tailwind CSS is purged to include only used utility classes
-5. Static assets in `public/` are copied to the output
+| satellite.js | TBD | SGP4 orbit propagator (planned, for satellite layer) |
 
 ---
 
@@ -525,259 +533,238 @@ The fallback API uses identical endpoints and response format.
 
 ### What is ADS-B?
 
-**ADS-B (Automatic Dependent Surveillance-Broadcast)** is a surveillance technology where aircraft broadcast their GPS position, identity, and flight parameters on **1090 MHz**. This data is:
-
-- **Unencrypted** — broadcast in the clear over open radio frequencies
-- **Public** — anyone with a receiver can pick up these signals
-- **Legal to receive** — in the US and most jurisdictions
-
-Volunteer-run ground stations around the world receive these signals and feed them to aggregators like ADSB.lol.
+**ADS-B (Automatic Dependent Surveillance-Broadcast)** is a surveillance technology where aircraft broadcast their GPS position, identity, and flight parameters on **1090 MHz**. This data is unencrypted, public, and legal to receive.
 
 ### Military identification
 
-The ADSB.lol database maintains a community-curated mapping of ICAO hex addresses to aircraft metadata. The `dbFlags` bitfield in each aircraft record indicates special statuses:
-
+The `dbFlags` bitfield in each aircraft record indicates military status:
 - **Bit 0 (value 1):** Military aircraft
 - Check: `(aircraft.dbFlags & 1) !== 0`
 
 The `/v2/mil` endpoint pre-filters for military aircraft, but the `isMilitary()` type guard provides an additional client-side check.
 
-### API endpoints used
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/v2/mil` | GET | All aircraft flagged as military |
-
-Additional endpoints available (not currently used):
-
-| Endpoint | Description |
-|---|---|
-| `/v2/hex/{icao}` | Single aircraft by ICAO hex address |
-| `/v2/callsign/{cs}` | Aircraft by callsign |
-| `/v2/type/{type}` | Aircraft by ICAO type code |
-| `/v2/squawk/{squawk}` | Aircraft by squawk code |
-
 ### Typical response size
 
-The `/v2/mil` endpoint returns **200-800 aircraft** depending on time of day and global military activity. This is small enough that:
-
-- No pagination is needed
-- No virtualization is needed for map markers
-- Full state replacement on each poll is efficient
-
-### Rate limiting
-
-No rate limits are currently enforced by ADSB.lol. Overwatch polls at a **10-second interval** as a good-faith limit to avoid unnecessary load.
+The `/v2/mil` endpoint returns **200-800 aircraft**. This is small enough that no pagination or virtualization is needed.
 
 ---
 
 ## Phase 5: Map Components
 
-Phase 5 implemented the Leaflet map layer with aircraft markers rendered from live data.
+Phase 5 implemented the Leaflet map layer with aircraft markers.
 
-### Files implemented:
+### `src/components/AircraftMarker.tsx`
 
-### `src/components/AircraftMarker.tsx` — Individual Aircraft Marker
+A `React.memo`'d client component that renders a single aircraft as a Leaflet marker. Uses `L.DivIcon` with inline SVG, altitude-based coloring, and track rotation.
 
-A `React.memo`'d client component that renders a single aircraft as a Leaflet marker.
+### `src/components/Map.tsx`
 
-- Returns `null` if the aircraft has no position (via `hasPosition` guard)
-- Uses `L.DivIcon` with inline SVG for the plane icon
-- SVG rotated by `aircraft.track` degrees via CSS `transform: rotate()`
-- Icon size 24x24, anchor 12x12 (centered)
-- **Altitude-based coloring:**
-  - Green (`#22c55e`): on ground
-  - Blue (`#3b82f6`): below 10,000 ft
-  - Red (`#ef4444`): 10,000 ft and above
-- Popup displays: formatted callsign, type code, registration, altitude, speed
-- Accepts `onClick` callback for future detail panel integration
+Client component with `MapContainer` + `TileLayer` from react-leaflet. Renders `AircraftMarker` for each positioned aircraft, keyed by `hex`.
 
-### `src/components/Map.tsx` — Leaflet Map Container
+### `src/components/MapWrapper.tsx`
 
-Client component that renders the interactive map.
-
-- Imports Leaflet CSS directly
-- Uses `MapContainer` + `TileLayer` from react-leaflet with OpenStreetMap tiles
-- Center/zoom configurable via env vars (defaults: 38.9°N, 77.0°W, zoom 5)
-- Renders `AircraftMarker` for each aircraft that passes `hasPosition` filter
-- Aircraft keyed by `hex` (ICAO address) for efficient React reconciliation
-
-### `src/components/MapWrapper.tsx` — Dynamic Import Wrapper
-
-Uses `next/dynamic` to import `Map.tsx` with `{ ssr: false }`. This prevents Leaflet from crashing during server-side rendering. Shows "Loading map..." placeholder while the component loads.
+Dynamic import wrapper using `next/dynamic` with `{ ssr: false }`.
 
 ---
 
 ## Phase 6: Polling Hook + Integration
 
-Phase 6 is the critical integration step that connects live data to the UI. It implements the polling hook, status bar, and wires everything together in the main page.
+### `src/hooks/useAircraftData.ts`
 
-### Files implemented:
+Custom React hook that polls `/api/aircraft` every 10 seconds. Pre-filters for positioned military aircraft. Preserves data on error.
 
-### `src/hooks/useAircraftData.ts` — Data Polling Hook
+### `src/components/StatusBar.tsx`
 
-Custom React hook that manages the aircraft data lifecycle.
-
-**State:**
-
-| Field | Type | Description |
-|---|---|---|
-| `aircraft` | `AircraftState[]` | Aircraft with valid positions (pre-filtered) |
-| `loading` | `boolean` | `true` until first fetch completes |
-| `error` | `string \| null` | Error message from last failed fetch, or `null` |
-| `lastUpdated` | `Date \| null` | Timestamp of last successful fetch |
-| `totalCount` | `number` | Total aircraft count from API response (includes those without positions) |
-
-**Behavior:**
-
-1. On mount: immediately calls `fetchMilitaryAircraft()`
-2. Sets up `setInterval` with `POLL_INTERVAL_MS` (reads `NEXT_PUBLIC_POLL_INTERVAL_MS`, defaults to `10000`)
-3. On success: replaces `aircraft` array with position-filtered results, updates `totalCount`, sets `lastUpdated`, clears `error`
-4. On failure: sets `error` message, preserves previous `aircraft` data (map stays populated), continues polling
-5. On unmount: clears the interval
-
-**Design decisions:**
-
-- Pre-filters for positioned aircraft in the hook, so consumers don't need to filter
-- Keeps previous data on error to avoid the map going blank during transient failures
-- Uses `useCallback` for the fetch function to maintain stable reference for `useEffect`
-
-### `src/components/StatusBar.tsx` — Connection Status Display
-
-Fixed bar at the top of the viewport showing real-time data status.
-
-**Layout:** Flexbox row with `justify-between`
-
-| Position | Content |
-|---|---|
-| Left | "Total: {N}" and "Tracked: {N}" (total vs positioned count) |
-| Right | "Updated HH:MM:SS" timestamp and connection indicator |
-
-**Connection indicator:**
-- Green dot + "Connected" when `error` is `null`
-- Red dot + error message when `error` is set
-
-**Styling:** `bg-zinc-900`, white text, `text-xs`, `px-4 py-2`
-
-### `src/app/page.tsx` — Updated Main Page
-
-Wires together all components:
-
-```
-┌─────────────────────────────────────────┐
-│ StatusBar (total, tracked, time, status)│
-├─────────────────────────────────────────┤
-│                                         │
-│           MapWrapper → Map              │
-│        (aircraft markers rendered)      │
-│                                         │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
-- Uses `useAircraftData()` hook for data
-- Shows loading placeholder until first fetch completes
-- Passes `aircraft` array to `MapWrapper` → `Map` → `AircraftMarker`s
-- Tracks `selectedAircraft` state for future detail panel
+Fixed bar at top of viewport showing counts, timestamp, and connection indicator.
 
 ---
 
 ## Phase 7: Detail Panel + Military Filtering Fix
 
-Phase 7 added an aircraft detail panel and fixed a data quality issue where non-military aircraft (e.g. Cessna) could appear on the map.
+### `src/components/AircraftPanel.tsx`
 
-### Bug Fix: Military Filtering
+Slide-in panel (320px, right side) showing comprehensive aircraft details with signal lost detection.
 
-The `/v2/mil` endpoint from ADSB.lol is intended to return only military aircraft, but the community-curated database isn't perfect — some non-military aircraft can slip through. The `isMilitary()` type guard existed in `types.ts` but was never applied in the data pipeline.
+### Military Filtering Fix
 
-**Fix:** Added `isMilitary` as a secondary filter in `useAircraftData.ts`. Aircraft must now pass both `isMilitary(ac)` AND `hasPosition(ac)` to appear on the map. This ensures only aircraft with `(dbFlags & 1) !== 0` are displayed.
+Added `isMilitary` as a secondary filter in `useAircraftData.ts` to catch non-military aircraft that slip through the `/v2/mil` endpoint.
 
-### Polling Frequency Analysis
+---
 
-The ADSB.lol API has no enforced rate limit, but their documentation and community guidelines recommend polling no faster than every 10 seconds. The upstream data refreshes approximately every 1-5 seconds. Our 10-second polling interval provides near-realtime tracking while being respectful of the free API. The server-side cache headers (`s-maxage=5, stale-while-revalidate=10`) align with this interval.
+## Phase 8: Aircraft-Type-Specific Icons
 
-### Files implemented/modified:
+Phase 8 replaces the single generic aircraft icon with category-specific silhouettes that make it visually obvious what kind of aircraft is where on the map.
 
-### `src/components/AircraftPanel.tsx` — Aircraft Detail Panel
+### `src/lib/aircraftIcons.ts` — Type Classification and Icon Mapping
 
-A slide-in panel that displays comprehensive information about a selected aircraft.
-
-**Props:**
-
-| Prop | Type | Description |
-|---|---|---|
-| `aircraft` | `AircraftState \| null` | The selected aircraft, or null to hide |
-| `onClose` | `() => void` | Callback to close the panel |
-| `signalLost` | `boolean` | Whether the aircraft has disappeared from polling data |
-
-**Layout:**
-
-- Positioned absolutely on the right side of the map container
-- 320px wide, full height, `zinc-800` background, rounded left corners
-- Slides in/out via CSS `transform: translateX()` with 300ms ease-in-out transition
-- `z-[1000]` to overlay the Leaflet map
-- Subtle left shadow (`-4px 0 16px rgba(0,0,0,0.4)`)
-
-**Content (top to bottom):**
-
-1. **Header row** — Callsign (bold, xl) + close button (X icon, hover effect)
-2. **Signal lost badge** (conditional) — Red background, pulsing dot, "Signal lost" text
-3. **Military badge** — Amber star icon with "Military" label
-4. **Detail rows** (separated by dividers):
-   - ICAO Hex (uppercased)
-   - Registration / tail number
-   - Aircraft type code
-   - Altitude (formatted via `formatAltitude`)
-   - Ground speed (formatted via `formatSpeed`)
-   - Heading (rounded degrees with ° suffix)
-   - Squawk code
-   - Latitude (4 decimal places)
-   - Longitude (4 decimal places)
-   - Last seen (human-readable: "Just now", "Xs ago", "Xm Ys ago")
-
-**Helper functions (local to file):**
-
-- `formatCoordinate(value)` — formats to 4 decimal places or "N/A"
-- `formatHeading(track)` — rounded degrees with ° suffix or "N/A"
-- `formatLastSeen(seen)` — converts seconds to human-readable duration
-
-### `src/app/page.tsx` — Updated with Aircraft Selection
-
-Added aircraft selection state management and panel rendering.
-
-**New state:**
-
-| State | Type | Purpose |
-|---|---|---|
-| `selectedAircraft` | `AircraftState \| null` | Currently selected aircraft for the detail panel |
-| `signalLost` | `boolean` | Whether selected aircraft has disappeared from data |
-| `selectedHexRef` | `Ref<string \| null>` | Ref tracking selected hex (avoids stale closure issues) |
-
-**New behavior:**
-
-1. `handleAircraftClick(ac)` — Sets selected aircraft, clears signal lost, updates hex ref
-2. `handleClosePanel()` — Clears selection, resets signal lost, clears hex ref
-3. **Poll refresh effect** — When `aircraft` array updates from a new poll:
-   - Finds the selected aircraft by hex code in the new data
-   - If found: updates `selectedAircraft` with fresh data, clears signal lost
-   - If not found: sets `signalLost = true`, keeps showing last known state
-4. **Layout** — `AircraftPanel` rendered inside the map container div (sibling to `MapWrapper`), positioned absolutely
-
-### `src/hooks/useAircraftData.ts` — Military Filter Added
-
-**Change:** The filter pipeline changed from:
+#### `AircraftCategory` type
 
 ```typescript
-// Before
-const positioned = response.ac.filter(hasPosition);
-
-// After
-const positioned = response.ac.filter(
-  (ac) => isMilitary(ac) && hasPosition(ac)
-);
+type AircraftCategory = 'fighter' | 'tanker-transport' | 'helicopter' | 'surveillance' | 'trainer' | 'bomber' | 'uav' | 'unknown';
 ```
 
-Now imports `isMilitary` from `@/lib/types` and applies it before `hasPosition`. This ensures only aircraft with the military `dbFlags` bit set are shown on the map, preventing civilian aircraft from appearing even if the upstream `/v2/mil` endpoint includes them.
+#### `AIRCRAFT_TYPE_MAP` — ICAO Type Code Lookup
+
+A `Record<string, AircraftCategory>` mapping ~60+ known military ICAO type codes to categories. The mapping is case-insensitive and supports both exact matches and prefix matching.
+
+**Matching strategy:**
+
+1. Normalize input to uppercase
+2. Check for exact match in the map
+3. If no exact match, try progressively shorter prefixes (e.g., `F15E` → `F15` → match)
+4. Return `'unknown'` if nothing matches
+
+**Coverage by category:**
+
+| Category | Type Codes |
+|---|---|
+| `fighter` | F16, F15, F15C, F15E, FA18, F18, F22, F35, A10, F117, EF2K, TORN, SU27, SU30, MIG29, JF17, J10, R1 |
+| `tanker-transport` | KC135, KC46, KC10, KC30, C17, C5, C130, C130J, C12, C37, C40, C2, A400, AN124, IL76 |
+| `helicopter` | UH60, AH64, CH47, CH53, V22, HH60, MH60, OH58, AH1, SH60, NH90, H60, S70, EC45, S92 |
+| `surveillance` | E3, E8, E6, RC135, EP3, P8, P3, U2, E2, EA18G, E4, JSTAR |
+| `trainer` | T38, T6, T45, T1, PC12, T7, PC21 |
+| `bomber` | B52, B1, B2, B21 |
+| `uav` | RQ4, MQ9, MQ1, RQ7, MQ4, HRON |
+
+#### `ICON_SIZES` — Size Configuration
+
+| Category | Icon Size (px) | Anchor (px) | Rationale |
+|---|---|---|---|
+| `fighter` | 24×24 | 12×12 | Standard size, agile appearance |
+| `tanker-transport` | 32×32 | 16×16 | Larger to convey size |
+| `helicopter` | 24×24 | 12×12 | Standard size |
+| `surveillance` | 28×28 | 14×14 | Slightly larger, distinct profile |
+| `trainer` | 20×20 | 10×10 | Smaller, lightweight aircraft |
+| `bomber` | 32×32 | 16×16 | Larger to convey size |
+| `uav` | 20×20 | 10×10 | Smaller, unmanned |
+| `unknown` | 24×24 | 12×12 | Default fallback |
+
+#### `getAircraftIconSvg(category, color)` — SVG Generation
+
+Returns inline SVG markup for each category as a string. Each SVG:
+- Is a top-down silhouette pointing north (0°)
+- Uses the `color` parameter as fill
+- Has a viewBox sized to its category's icon dimensions
+- Is visually distinct at map zoom levels 3-12
+
+**Icon design principles:**
+- **Fighter:** Swept delta wings, narrow fuselage, angled tail fins. Think F-16 top-down.
+- **Tanker/Transport:** Straight, wide wings (high aspect ratio), fat cylindrical fuselage, T-tail. Think C-17.
+- **Helicopter:** Circle for rotor disc, narrow fuselage below, tail boom extending backward. Think UH-60.
+- **Surveillance:** Similar to transport but with a visible radome disc (circle) on top of fuselage. Think E-3 AWACS.
+- **Trainer:** Small, simple, straight wings, single engine profile. Think T-38.
+- **Bomber:** Large swept wings, wide fuselage, no vertical tail (for stealth types). Think B-52 or B-2 blend.
+- **UAV:** Small delta/flying wing, no tail assembly, minimal fuselage. Think RQ-4 Global Hawk wing.
+- **Unknown:** Generic aircraft shape (same as Phase 4 icon).
+
+### Updated `AircraftMarker.tsx`
+
+Changes from Phase 5:
+- Imports `getAircraftCategory`, `getAircraftIconSvg`, `ICON_SIZES` from `aircraftIcons.ts`
+- Calls `getAircraftCategory(aircraft.t)` to determine icon type
+- Uses `getAircraftIconSvg(category, color)` for the DivIcon HTML
+- Uses `ICON_SIZES[category]` for `iconSize` and `iconAnchor`
+- Popup and panel now show aircraft category as a badge
+
+### Updated `AircraftPanel.tsx`
+
+- New field: "Category" row showing the human-readable category name (e.g., "Fighter", "Tanker/Transport")
+- Category displayed as a colored badge below the type code
+
+---
+
+## Additional Data Layers
+
+### Maritime Vessel Tracking (AIS) — Layer 2
+
+**Data source:** Free AIS aggregators (AISHub, mAIS, or similar)
+
+**Key concepts:**
+- AIS is the maritime equivalent of ADS-B — ships broadcast identity and position on VHF
+- Military vessels identifiable by MMSI range (US Navy: 338-369 prefix) and vessel type codes (35, 55)
+- Data updates less frequently than aircraft (30-second polling interval)
+
+**Architecture:**
+- `src/lib/maritimeTypes.ts` — `VesselState`, `VesselResponse`, `hasVesselPosition`, `isMilitaryVessel`
+- `src/app/api/vessels/route.ts` — Proxy with 15s timeout, 10s cache
+- `src/hooks/useVesselData.ts` — 30s polling, same error resilience pattern
+- `src/components/VesselMarker.tsx` — Ship silhouette icon, heading rotation, cyan/teal coloring
+
+### Satellite Tracking — Layer 3
+
+**Data source:** CelesTrak (free, no auth, TLE data in JSON format)
+
+**Key concepts:**
+- TLE (Two-Line Element) sets describe satellite orbits compactly
+- SGP4 algorithm propagates TLEs to compute position at any time
+- Client-side propagation via `satellite.js` for smooth real-time updates
+- TLEs fetched every 5 minutes, positions recomputed every 5 seconds
+
+**Architecture:**
+- `src/lib/satelliteTypes.ts` — `SatelliteState`, TLE parsing, SGP4 propagation helpers
+- `src/app/api/satellites/route.ts` — Proxy to CelesTrak, 5-minute cache
+- `src/hooks/useSatelliteData.ts` — TLE fetch (5min) + position propagation (5s)
+- `src/components/SatelliteMarker.tsx` — Small diamond icon, category-based coloring
+
+**CelesTrak endpoints:**
+- Military: `https://celestrak.org/NORAD/elements/gp.php?GROUP=military&FORMAT=json`
+- GPS: `https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=json`
+
+### Conflict Events (GDELT) — Layer 4
+
+**Data source:** GDELT Project API (free, no auth, real-time)
+
+**Key concepts:**
+- GDELT monitors news worldwide and geocodes events
+- Filter by CAMEO codes 17-20 for military/conflict events
+- GeoJSON output for direct map integration
+
+**Architecture:**
+- `src/lib/conflictTypes.ts` — `ConflictEvent`, intensity scoring
+- `src/app/api/conflicts/route.ts` — Proxy to GDELT, 15-minute cache
+- `src/hooks/useConflictData.ts` — 15-minute polling
+- `src/components/ConflictMarker.tsx` — Circle markers, intensity-based sizing/coloring
+
+### Airspace Restrictions (NOTAMs/TFRs) — Layer 5
+
+**Data source:** FAA NOTAM API (free API key) or FAA TFR web feed
+
+**Architecture:**
+- `src/app/api/notams/route.ts` — Proxy to FAA, 30-minute cache
+- `src/components/NotamOverlay.tsx` — Semi-transparent polygon overlays for TFR boundaries
+
+### Seismic Monitoring — Layer 6
+
+**Data source:** USGS Earthquake API (free, no auth)
+
+**Endpoint:** `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&minmagnitude=4&limit=50`
+
+Supplementary layer showing large seismic events. Circle markers with magnitude-based sizing.
+
+---
+
+## Layer Toggle System
+
+### `DataLayerState` interface
+
+```typescript
+interface DataLayerState {
+  aircraft: boolean;    // default: true
+  vessels: boolean;     // default: false
+  satellites: boolean;  // default: false
+  conflicts: boolean;   // default: false
+  notams: boolean;      // default: false
+  seismic: boolean;     // default: false
+}
+```
+
+### Behavior
+
+- Layer state managed in `page.tsx`
+- Persisted to `localStorage` for cross-session memory
+- Disabled layers stop polling (interval cleared) to conserve bandwidth
+- Each layer's hook accepts an `enabled` boolean parameter
+- `LayerControl` component provides UI toggles with item counts
 
 ---
 
@@ -785,14 +772,22 @@ Now imports `isMilitary` from `@/lib/types` and applies it before `hasPosition`.
 
 | Phase | Description | Key Deliverables |
 |---|---|---|
-| ~~3~~ | ~~API Proxy Route~~ | ~~Done~~ |
+| ~~1~~ | ~~Scaffold~~ | ~~Done~~ |
+| ~~2~~ | ~~Types & API~~ | ~~Done~~ |
+| ~~3~~ | ~~API Proxy~~ | ~~Done~~ |
 | ~~4~~ | ~~Aircraft Icon~~ | ~~Done (inline SVG in AircraftMarker)~~ |
 | ~~5~~ | ~~Map Components~~ | ~~Done~~ |
 | ~~6~~ | ~~Polling + Integration~~ | ~~Done~~ |
 | ~~7~~ | ~~Detail Panel~~ | ~~Done — AircraftPanel, selection state, signal lost, isMilitary filter~~ |
-| 8 | Filter Bar | Search, altitude filter, aircraft count display |
-| 9 | Polish | Loading/error/empty states, responsive design, metadata |
-| 10 | Final Verification | End-to-end testing, build validation, documentation review |
+| 8 | Aircraft-Type Icons | Type classification, category-specific SVGs, updated markers + panel |
+| 9 | Filter Bar | Search, altitude filter, category filter, aircraft count display |
+| 10 | Polish | Loading/error/empty states, responsive design, metadata, attribution |
+| 11 | Final Verification | End-to-end testing, build validation, documentation review |
+| 12 | Maritime Layer | AIS vessel tracking, ship markers, vessel detail |
+| 13 | Satellite Layer | CelesTrak TLEs, SGP4 propagation, satellite markers |
+| 14 | Conflict Layer | GDELT events, conflict markers, intensity visualization |
+| 15 | Layer Control + NOTAMs | Layer toggle panel, TFR polygon overlays, unified filter system |
+| 16 | Final Polish | Performance, mobile, multi-layer error handling, deployment prep |
 
 ---
 
