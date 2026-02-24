@@ -1,14 +1,20 @@
 # Overwatch — Open Source Military Movement Tracker
 
-A real-time military movement intelligence dashboard built with TypeScript, using publicly available data sources and an interactive map interface. Track military aircraft, naval vessels, satellites, and global conflict events — all from open, free data.
+A real-time military movement intelligence dashboard built with TypeScript, using publicly available data sources and an interactive map interface. Track military aircraft and naval vessels worldwide — all from open, free data.
 
 ## What It Does
 
-Overwatch aggregates multiple publicly available data sources to create a comprehensive picture of military movement worldwide. The primary layer polls the [ADSB.lol](https://www.adsb.lol/) public API for aircraft flagged as military, then renders their positions, headings, altitudes, and callsigns on a live Leaflet.js map with aircraft-type-specific icons. Users can click any aircraft to see detail (type, registration, speed, altitude, squawk code) and optionally follow its movement over time.
+Overwatch aggregates multiple publicly available data sources to create a comprehensive picture of military movement worldwide.
 
-Additional planned data layers include maritime vessel tracking via AIS, satellite orbit visualization, conflict event mapping, and airspace restriction overlays.
+**Aircraft Tracking** — The primary layer polls the [ADSB.lol](https://www.adsb.lol/) public API for aircraft flagged as military, then renders their positions, headings, altitudes, and callsigns on a live Leaflet.js map with aircraft-type-specific silhouette icons. Users can click any aircraft to see details (type, registration, speed, altitude, squawk code, country of registration) and filter by search, altitude band, or aircraft category.
+
+**Maritime Vessel Tracking** — The vessel layer connects to [aisstream.io](https://aisstream.io/) via a server-side WebSocket for real-time AIS data. Vessels are rendered with ship-shaped markers color-coded by type (cargo, tanker, military, etc.). Military vessels are identified via AIS type codes, name patterns, and MMSI prefixes. The layer is toggleable and requires a free API key.
+
+Additional planned data layers include satellite orbit visualization, conflict event mapping, and airspace restriction overlays.
 
 All aircraft data comes from **ADS-B (Automatic Dependent Surveillance-Broadcast)** — a technology where aircraft broadcast their GPS position, identity, and flight parameters on 1090 MHz. Volunteer-run ground receivers collect these signals and feed them to aggregators like ADSB.lol. This data is inherently public; it is broadcast unencrypted over open radio frequencies.
+
+All vessel data comes from **AIS (Automatic Identification System)** — the maritime equivalent of ADS-B. Ships broadcast their identity, position, course, and speed on VHF frequencies. Like ADS-B, this data is publicly receivable.
 
 ## Data Sources
 
@@ -70,17 +76,19 @@ Aircraft are rendered with type-specific silhouette icons based on their ICAO ty
 | `seen` | Seconds since last message |
 | `seen_pos` | Seconds since last position update |
 
-### Layer 2: Maritime Vessels via AIS (In Progress)
-
-**What is AIS?** The Automatic Identification System is the maritime equivalent of ADS-B. Ships broadcast their identity, position, course, and speed on VHF frequencies. Like ADS-B, this data is publicly receivable.
+### Layer 2: Maritime Vessels via AIS (Active)
 
 | Source | URL | Auth | Status |
 |---|---|---|---|
 | aisstream.io | `wss://stream.aisstream.io/v0/stream` | Free API key | Active |
 
-**Data source:** aisstream.io provides global AIS vessel data via WebSocket with a free API key. The connection streams real-time position reports for vessels worldwide.
+**Data source:** aisstream.io provides global AIS vessel data via WebSocket with a free API key. A server-side singleton WebSocket manager maintains the connection, accumulates vessel data in memory, and serves it to the frontend via a REST polling endpoint.
 
-**Military vessel identification:** US Navy vessels use MMSI numbers in the 338-369 range. Vessel type codes 35 (military ops) and 55 (law enforcement) are also indicators.
+**Military vessel identification:** AIS type code 35 (military ops), type code 55 (law enforcement), warship name patterns (USS, HMS, USCG, etc.), coast guard name patterns, and MMSI prefix 3669 (US federal NTIA assignment).
+
+**Vessel categories:** Military (red), Cargo (blue), Tanker (orange), Passenger (green), Fishing (purple), Tug/Pilot (yellow), High-Speed Craft (cyan), Pleasure Craft (pink), Other (gray).
+
+**Coverage:** Terrestrial AIS only (~200km from coastlines). Ports, shipping lanes, and chokepoints have excellent coverage. Open ocean has gaps. Vessels in the middle of the ocean won't appear.
 
 ### Layer 3: Military Satellites (Planned)
 
@@ -131,6 +139,7 @@ Real-time seismic data as GeoJSON. Supplementary awareness layer — large seism
 | **Tiles** | OpenStreetMap via `tile.openstreetmap.org` | Free, open, reliable |
 | **Styling** | Tailwind CSS 3 | Utility-first, minimal config |
 | **HTTP** | Native `fetch` | No extra dependencies |
+| **WebSocket** | `ws` (server-side) | aisstream.io connection |
 | **Linting** | ESLint 10 (flat config) + typescript-eslint | Consistent code |
 | **Satellites** | satellite.js (planned) | SGP4 orbit propagation |
 
@@ -139,6 +148,7 @@ Real-time seismic data as GeoJSON. Supplementary awareness layer — large seism
 - **Leaflet + OpenStreetMap** over Mapbox/Google Maps: Completely free with no API key, token, or billing account. Mapbox requires a token and has usage limits. Google Maps requires billing. OSM tiles are served free under a fair-use tile policy.
 - **Next.js API routes as a proxy**: Each external API gets its own proxy route, giving us centralized caching, rate limiting, and response shaping without exposing upstream API structures to the client.
 - **ADSB.lol** over OpenSky Network: OpenSky requires OAuth2 credentials (since March 2025), has stricter rate limits, and does not have a dedicated military endpoint. ADSB.lol has `/v2/mil` built in and requires no authentication.
+- **Server-side WebSocket singleton** for vessel data: One connection serves all browser clients (vs. each tab opening its own). API key stays server-side. Reconnection is managed independently of browser sessions.
 - **Multiple independent data layers**: Each layer has its own polling hook, proxy route, and marker component. Layers fail independently — if one API goes down, the others keep working.
 
 ## Project Structure
@@ -156,29 +166,40 @@ overwatch/
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx           # Root layout + metadata
-│   │   ├── page.tsx             # Main page (map + filters + panel + overlays)
+│   │   ├── page.tsx             # Main page (map + filters + panels + layer control + overlays)
 │   │   ├── icon.svg             # Favicon (amber aircraft silhouette)
 │   │   └── api/
-│   │       └── aircraft/
-│   │           └── route.ts     # Proxy to ADSB.lol
+│   │       ├── aircraft/
+│   │       │   └── route.ts     # Proxy to ADSB.lol /v2/mil
+│   │       └── vessels/
+│   │           └── route.ts     # Serves cached vessel data from aisStreamManager
 │   ├── components/
-│   │   ├── Map.tsx              # Leaflet map (client component, no SSR)
+│   │   ├── Map.tsx              # Leaflet map with aircraft + vessel rendering (client, no SSR)
 │   │   ├── MapWrapper.tsx       # Dynamic import wrapper for Map (ssr: false)
 │   │   ├── AircraftMarker.tsx   # Aircraft marker with type-specific icons
-│   │   ├── AircraftPanel.tsx    # Detail panel (sidebar on desktop, bottom sheet on mobile)
-│   │   ├── FilterBar.tsx        # Search + altitude/category filters (responsive)
+│   │   ├── AircraftPanel.tsx    # Aircraft detail panel (sidebar/bottom sheet)
+│   │   ├── VesselMarker.tsx     # Vessel marker with ship silhouette icon
+│   │   ├── VesselPanel.tsx      # Vessel detail panel (sidebar/bottom sheet)
+│   │   ├── FilterBar.tsx        # Aircraft search + altitude/category filters
+│   │   ├── VesselFilterBar.tsx  # Vessel country + category filters
+│   │   ├── LayerControl.tsx     # Floating layer toggle panel (aircraft/vessels)
 │   │   └── StatusBar.tsx        # Connection status + counts
 │   ├── hooks/
-│   │   └── useAircraftData.ts   # Aircraft polling hook (10s interval)
+│   │   ├── useAircraftData.ts   # Aircraft polling hook (10s interval)
+│   │   └── useVesselData.ts     # Vessel polling hook (15s interval, toggleable)
 │   ├── lib/
 │   │   ├── api.ts               # Aircraft fetch wrapper
 │   │   ├── types.ts             # Aircraft TypeScript interfaces
 │   │   ├── utils.ts             # Formatting helpers
-│   │   └── aircraftIcons.ts     # Type classification + SVG icon mapping
+│   │   ├── aircraftIcons.ts     # Type classification + SVG icon mapping
+│   │   ├── countryLookup.ts     # ICAO hex-to-country lookup + flag emoji
+│   │   ├── env.ts               # Server-side environment helpers (API key access)
+│   │   ├── vesselTypes.ts       # Vessel interfaces, MID lookup, military identification
+│   │   └── aisStreamManager.ts  # Server-side WebSocket singleton for aisstream.io
 │   └── styles/
 │       └── globals.css          # Tailwind directives
 └── public/
-    └── favicon.svg              # Favicon (also served from src/app/icon.svg)
+    └── favicon.svg              # Favicon
 ```
 
 ## Running Locally
@@ -202,7 +223,9 @@ The vessel tracking layer requires a free API key from aisstream.io:
 3. Open `.env.local` and set `AISSTREAM_API_KEY=your_key_here`
 4. Restart the dev server — the vessel layer toggle will become active
 
-Without an API key, the vessel layer toggle will appear disabled. All other features work normally.
+Without an API key, the vessel layer toggle will appear disabled with an "API key required" message. All other features work normally.
+
+Once enabled, click the "Vessels" toggle in the bottom-left layer control panel. Vessels will start appearing within 30-60 seconds as the WebSocket stream populates. Coverage is best near coastlines, ports, and major shipping lanes.
 
 ## Environment Variables
 

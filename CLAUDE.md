@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Overwatch is a real-time military movement intelligence dashboard using publicly available data sources. The primary layer is aircraft tracking via ADSB.lol's free public API on a Leaflet.js map. Additional planned layers include maritime vessel tracking (AIS), satellite orbit tracking, conflict event data, and airspace restriction overlays.
+Overwatch is a real-time military movement intelligence dashboard using publicly available data sources. It currently tracks military aircraft via ADSB.lol and maritime vessels via aisstream.io, rendered on an interactive Leaflet.js map. Additional planned layers include satellite orbit tracking, conflict event data, and airspace restriction overlays.
 
 It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 
@@ -17,7 +17,7 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 - **Phase 8 (Aircraft Icons):** Complete — AircraftCategory type system, ICAO type code mapping, category-specific SVG silhouettes, icon size rules, AircraftMarker + AircraftPanel integration
 - **Phase 9 (Filter Bar):** Complete — search by callsign/reg/hex/type, altitude band filter, category filter, aircraft count display
 - **Phase 10 (Polish):** Complete — loading/error/empty states, favicon, page metadata, ADSB.lol attribution, responsive mobile layout, ESLint flat config migration
-- **Phase 12 (Maritime Vessel Tracking):** In progress — rebuilding with aisstream.io WebSocket API (previous Digitraffic implementation removed)
+- **Phase 12 (Maritime Vessel Tracking):** Complete — aisstream.io WebSocket API, vessel markers/panel/filters, layer toggle with localStorage persistence, viewport filtering, zoom gate
 
 ### What's Implemented
 
@@ -26,36 +26,39 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 | `src/lib/types.ts` | Done | `AircraftState`, `AircraftResponse` interfaces; `hasPosition`, `isMilitary` guards |
 | `src/lib/utils.ts` | Done | `formatAltitude`, `formatSpeed`, `formatCallsign`, `getAircraftLabel` helpers |
 | `src/lib/api.ts` | Done | `fetchMilitaryAircraft` — fetches from local proxy with validation |
-| `src/app/api/aircraft/route.ts` | Done | Proxies to ADSB.lol `/v2/mil` with 15s timeout, cache headers, structured 502 errors |
-| `src/app/layout.tsx` | Done | Root layout with metadata ("Overwatch — Military Movement Tracker"), favicon, globals.css import |
-| `src/app/icon.svg` | Done | SVG favicon — amber aircraft silhouette on dark background |
-| `src/app/page.tsx` | Done | Client component with useAircraftData, StatusBar, FilterBar, MapWrapper, AircraftPanel, loading/error/empty overlays |
 | `src/lib/aircraftIcons.ts` | Done | `AircraftCategory` type, `AIRCRAFT_TYPE_MAP`, `getAircraftCategory()`, `ICON_SIZES`, `getAircraftIconSvg()`, `getCategoryLabel()` — SVG icons sourced from ADS-B Radar |
 | `src/lib/countryLookup.ts` | Done | ICAO hex-to-country lookup (170+ ranges), `getCountryFromHex()`, `countryCodeToFlag()` emoji converter |
-| `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with category-specific DivIcon SVG silhouettes, altitude-based coloring, track rotation, popup with country flag + category badge |
-| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders `AircraftMarker` for each positioned aircraft, viewport-filtered vessel rendering with zoom gate (zoom >= 4), includes ADSB.lol + ADS-B Radar + aisstream.io attribution |
-| `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
-| `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel — right sidebar on desktop, bottom sheet on mobile (<768px), signal lost indicator, country flag badge, category badge |
-| `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, vessel count (when layer active), last updated time, connection status with colored indicator |
-| `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by hasPosition, preserves data on failure |
-| `src/components/FilterBar.tsx` | Done | Search (callsign/reg/hex/type), altitude band filter, category filter, aircraft count — responsive (full-width search on mobile) |
-| `eslint.config.mjs` | Done | ESLint 10 flat config with `@eslint/js` + `typescript-eslint` |
 | `src/lib/env.ts` | Done | `getAisStreamApiKey()`, `isVesselTrackingEnabled()` — server-side only environment helpers |
 | `src/lib/vesselTypes.ts` | Done | `VesselData` interface, `VesselCategory` type, `getVesselCategory()`, `getMIDFromMMSI()`, `getCountryFromMID()` (MID lookup for 60+ nations), `identifyMilitaryVessel()` (type code + name pattern + MMSI heuristics), `VESSEL_COLORS`, `VESSEL_CATEGORY_LABELS` |
 | `src/lib/aisStreamManager.ts` | Done | Singleton server-side WebSocket manager for aisstream.io — `initAisStream()`, `getVessels()`, `getConnectionStatus()`; handles reconnection, staleness cleanup, message parsing |
+| `src/app/api/aircraft/route.ts` | Done | Proxies to ADSB.lol `/v2/mil` with 15s timeout, cache headers, structured 502 errors |
+| `src/app/api/vessels/route.ts` | Done | REST endpoint serving cached vessel data from aisStreamManager; returns vessels array + connection status; no-store cache |
+| `src/app/layout.tsx` | Done | Root layout with metadata ("Overwatch — Military Movement Tracker"), favicon, globals.css import |
+| `src/app/icon.svg` | Done | SVG favicon — amber aircraft silhouette on dark background |
+| `src/app/page.tsx` | Done | Client component integrating both aircraft and vessel layers — useAircraftData, useVesselData, StatusBar, FilterBar, VesselFilterBar, MapWrapper, AircraftPanel, VesselPanel, LayerControl, loading/error/empty overlays, localStorage-persisted vessel toggle |
+| `src/hooks/useAircraftData.ts` | Done | Polls `/api/aircraft` every 10s, filters by hasPosition, preserves data on failure |
+| `src/hooks/useVesselData.ts` | Done | Polls `/api/vessels` every 15s when enabled, returns vessels + militaryVessels + connection status, preserves data on failure |
+| `src/components/AircraftMarker.tsx` | Done | `React.memo`'d marker with category-specific DivIcon SVG silhouettes, altitude-based coloring, track rotation, popup with country flag + category badge |
+| `src/components/AircraftPanel.tsx` | Done | Slide-in detail panel — right sidebar on desktop, bottom sheet on mobile (<768px), signal lost indicator, country flag badge, category badge |
+| `src/components/Map.tsx` | Done | Client component using vanilla Leaflet `L.map` + `L.tileLayer`, renders AircraftMarker + VesselMarker, viewport-filtered vessel rendering with zoom gate (zoom >= 4), custom vessel pane (z-index 450), includes ADSB.lol + ADS-B Radar + aisstream.io attribution |
+| `src/components/MapWrapper.tsx` | Done | Dynamically imports Map with `{ ssr: false }`, shows loading placeholder |
+| `src/components/StatusBar.tsx` | Done | Shows total/tracked counts, vessel count (when layer active), last updated time, connection status with colored indicator |
+| `src/components/FilterBar.tsx` | Done | Search (callsign/reg/hex/type), altitude band filter, category filter, aircraft count — responsive (full-width search on mobile) |
+| `src/components/VesselMarker.tsx` | Done | `React.memo`'d marker with top-down ship SVG silhouette, heading/COG rotation, military vessels larger (28px) + red, civilian vessels (20px) + category color, popup with flag + category + speed + destination |
+| `src/components/VesselPanel.tsx` | Done | Slide-in detail panel — same layout as AircraftPanel (right sidebar desktop, bottom sheet mobile), shows vessel name, MMSI, flag badge, military category badge, type, speed, course, heading, destination, coordinates, last update, signal lost indicator |
 | `src/components/VesselFilterBar.tsx` | Done | Vessel layer filter bar — country/flag dropdown (dynamically populated), vessel type/category dropdown, vessel count display, blue accent styling |
+| `src/components/LayerControl.tsx` | Done | Floating bottom-left panel — aircraft row (always on, green dot, count), vessel row (toggleable switch, blue accent, connection status dot, count with filter info), disabled state with "API key required" message |
+| `eslint.config.mjs` | Done | ESLint 10 flat config with `@eslint/js` + `typescript-eslint` |
 
 ### What's Planned
 
 | File | Status | Description |
 |---|---|---|
-| `src/lib/dataLayers.ts` | Planned | Unified data layer toggle system |
 | `src/app/api/satellites/route.ts` | Planned | Satellite TLE/position proxy route |
 | `src/app/api/conflicts/route.ts` | Planned | Conflict event data proxy route |
 | `src/app/api/notams/route.ts` | Planned | NOTAM/TFR proxy route |
 | `src/components/SatelliteMarker.tsx` | Planned | Satellite orbit/position marker |
 | `src/components/ConflictMarker.tsx` | Planned | Conflict event marker |
-| `src/components/LayerControl.tsx` | Planned | Data layer toggle panel (currently a simple button in FilterBar) |
 
 ## Commands
 
@@ -102,7 +105,23 @@ It is a Next.js 16 App Router project in TypeScript with Tailwind CSS.
 - No auth required. No rate limit currently enforced, but poll no faster than every 10 seconds.
 - Fallback: `https://api.adsb.one` uses identical endpoints.
 
-### Aircraft Icon Classification System (Phase 8)
+### aisstream.io Vessel Tracking API
+
+- WebSocket URL: `wss://stream.aisstream.io/v0/stream`
+- Auth: API key sent in the subscription message on connect (server-side only, never in browser)
+- Message types: `PositionReport` (lat, lon, cog, sog, heading) and `ShipStaticData` (ship type, destination, name)
+- Coverage: terrestrial AIS only (~200km from coastlines) — ports, shipping lanes, and chokepoints have excellent coverage; open ocean has gaps
+- Military identification: AIS type code 35 (military ops), type code 55 (law enforcement), warship name patterns (USS, HMS, USCG, etc.), and MMSI prefix 3669 (US federal NTIA assignment)
+- Subscription message format:
+  ```json
+  {
+    "APIKey": "<key>",
+    "BoundingBoxes": [[[-90, -180], [90, 180]]],
+    "FilterMessageTypes": ["PositionReport", "ShipStaticData"]
+  }
+  ```
+
+### Aircraft Icon Classification System
 
 Aircraft are categorized by ICAO type code (`t` field) into visual categories, each with a distinct SVG silhouette icon sourced from the [ADS-B Radar](https://adsb-radar.com) icon set (free for personal/commercial use with attribution).
 
@@ -179,7 +198,7 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 
 - `fetchMilitaryAircraft()` — fetches from `/api/aircraft` (local proxy), validates the response shape, throws on HTTP errors or malformed data.
 
-### API Proxy Route (src/app/api/aircraft/route.ts)
+### API Proxy Route — Aircraft (src/app/api/aircraft/route.ts)
 
 - Exports an async `GET` handler using Next.js App Router route handler conventions
 - Reads upstream base URL from `process.env.NEXT_PUBLIC_API_BASE_URL`, defaulting to `"https://api.adsb.lol"`
@@ -187,6 +206,14 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - On success: forwards JSON with `Cache-Control: public, s-maxage=5, stale-while-revalidate=10`
 - On fetch error (network/timeout): returns 502 `{ error: "Upstream API unavailable", details: error.message }`
 - On non-200 upstream: returns 502 with upstream status code in details
+
+### API Route — Vessels (src/app/api/vessels/route.ts)
+
+- Exports an async `GET` handler
+- If vessel tracking is not enabled (no API key): returns `{ vessels: [], status: { state: 'disabled', vesselCount: 0, lastMessage: 0 } }` with 200 status
+- Calls `initAisStream()` (idempotent — first request starts the WebSocket, subsequent are no-ops)
+- Returns `{ vessels, status }` with `Cache-Control: no-store` (real-time data, never cache)
+- On error: returns 500 with `{ error: "Failed to fetch vessel data", details: message }`
 
 ### Leaflet Map
 
@@ -205,15 +232,25 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
   - Icon size varies by category (see Icon Size Rules above)
   - Altitude-based coloring: green (`#22c55e`) for ground, blue (`#3b82f6`) for < 10,000 ft, red (`#ef4444`) for >= 10,000 ft
   - Popup displays: formatted callsign, country flag emoji + country name, type code, registration, altitude, speed, category badge
-- **Map.tsx** — `"use client"` component importing Leaflet CSS, creates map via `L.map` + `L.tileLayer`, renders `AircraftMarker` per positioned aircraft (keyed by `hex`)
+- **VesselMarker.tsx** — `React.memo`'d client component receiving `VesselData`, `onClick`, `map`, `pane`
+  - Top-down ship SVG silhouette (pointed bow, wider hull, flat stern) — visually distinct from aircraft
+  - Military vessels: 28px, red (`#ff4444`), thicker stroke
+  - Civilian vessels: 20px, category-based color from `VESSEL_COLORS`, thin stroke
+  - Rotation by `heading` (falls back to `cog` when heading is 511/unavailable)
+  - Popup displays: name, MMSI, country flag, category, speed, course, heading, destination, military badge
+  - Custom memo comparator: only re-renders when lat, lon, heading, cog, sog, or lastUpdate changes
+- **Map.tsx** — `"use client"` component importing Leaflet CSS, creates map via `L.map` + `L.tileLayer`, renders `AircraftMarker` per positioned aircraft (keyed by `hex`) and `VesselMarker` per vessel (keyed by MMSI)
   - Map center/zoom read from env vars with defaults (38.9, -77.0, zoom 5)
   - Attribution includes OpenStreetMap, ADSB.lol, ADS-B Radar, and aisstream.io
+  - Custom vessel pane with z-index 450 (below aircraft marker pane at 600)
   - Viewport filtering: tracks map bounds via `moveend`/`zoomend` events, only renders vessels within the current viewport for performance with 2000+ markers
   - Zoom gate: vessel markers only render at zoom >= 4; shows "Zoom in to see vessels" notice when zoomed out
 - **MapWrapper.tsx** — uses `next/dynamic` to import `Map` with `{ ssr: false }`, shows "Loading map..." placeholder
   - This is what `page.tsx` renders — never import `Map.tsx` directly from a server component
 
-### Polling Hook (src/hooks/useAircraftData.ts)
+### Polling Hooks
+
+#### useAircraftData (src/hooks/useAircraftData.ts)
 
 - `useAircraftData()` — custom hook that polls `/api/aircraft` every 10 seconds
 - Returns `{ aircraft, loading, error, lastUpdated, totalCount }`
@@ -223,12 +260,23 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - On failure: sets error message string, preserves previous aircraft data on map, continues polling
 - Cleanup: clears interval on unmount
 
+#### useVesselData (src/hooks/useVesselData.ts)
+
+- `useVesselData(enabled: boolean)` — custom hook that polls `/api/vessels` every 15 seconds when enabled
+- Returns `{ vessels, militaryVessels, loading, error, status }`
+- `militaryVessels` is `vessels.filter(v => v.isMilitary)`
+- `status` contains connection state from the server-side WebSocket manager
+- When `enabled` is false: stops polling but preserves last fetched data
+- When `enabled` transitions true→false: clears interval, keeps data
+- When `enabled` transitions false→true: fetches immediately and starts polling
+- On failure: sets error, preserves previous vessel data, continues polling
+
 ### StatusBar (src/components/StatusBar.tsx)
 
 - Fixed to top of viewport, dark background (`zinc-900`), white text, small font
-- Left side: total count (from API response) and tracked count (aircraft with positions)
+- Left side: "OVERWATCH" brand + total count (from API response), tracked count (aircraft with positions), vessel count (when layer active, blue accent)
 - Right side: last updated time (HH:MM:SS), connection status (green/red dot + message)
-- Props: `totalCount`, `positionCount`, `lastUpdated`, `error`
+- Props: `totalCount`, `positionCount`, `lastUpdated`, `error`, `vesselEnabled?`, `vesselCount?`
 
 ### AircraftPanel (src/components/AircraftPanel.tsx)
 
@@ -240,6 +288,15 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - Close button (X) in top-right corner
 - "Signal lost" indicator (red badge with pulse animation) when aircraft disappears from data
 - Absolutely positioned overlaying the map at `z-[1000]`
+
+### VesselPanel (src/components/VesselPanel.tsx)
+
+- Same slide-in layout as AircraftPanel (right sidebar on desktop, bottom sheet on mobile)
+- Props: `vessel` (VesselData | null), `onClose` callback, `signalLost` boolean
+- When `vessel` is null, panel slides off-screen via CSS transition
+- Displays: vessel name (or "Unknown Vessel"), MMSI, country flag badge (from MID lookup + `flagCode`), military category badge (Warship / Coast Guard / Law Enforcement / Military Support), type + raw code, speed, course, heading (or "N/A" when 511), destination (or "Not reported"), lat/lon (4 decimal places), last update time
+- Close button (X) in top-right corner
+- "Signal lost" indicator when vessel disappears from data
 
 ### FilterBar (src/components/FilterBar.tsx)
 
@@ -259,13 +316,24 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 - **Count display:** "Showing X of Y vessels" (hidden on mobile)
 - Props: `countryFilter`, `onCountryFilterChange`, `categoryFilter`, `onCategoryFilterChange`, `filteredCount`, `totalCount`, `countries: string[]`
 
-### Aircraft Selection (src/app/page.tsx)
+### LayerControl (src/components/LayerControl.tsx)
 
-- `selectedAircraft` state tracks the currently selected aircraft
-- `signalLost` state tracks whether the selected aircraft has disappeared from polling data
-- On each poll refresh, updates selected aircraft data by matching `hex` code
-- If the selected aircraft disappears from the data, keeps showing last known state with "Signal lost" indicator
-- Close handler clears selection and resets signal lost state
+- Floating panel in the bottom-left corner of the map (`z-[800]`), dark semi-transparent background with backdrop blur
+- **Aircraft row:** airplane icon, "Aircraft (count)" label, always-green status dot (aircraft layer is always on)
+- **Vessel row:** ship icon, "Vessels (count)" or "Vessels (filtered of total)" label, toggle switch, connection status dot
+  - Status dot colors: green = connected, yellow = connecting/reconnecting, red = error, gray = off/disabled
+  - When `state === 'disabled'` (no API key): toggle grayed out, not clickable, shows "API key required" text
+- Vessel toggle state persisted to `localStorage` key `'overwatch-vessel-layer'`
+- Props: `aircraftCount`, `vesselEnabled`, `onVesselToggle`, `vesselCount`, `vesselTotalCount?`, `vesselStatus`
+
+### Page Integration (src/app/page.tsx)
+
+- **Aircraft selection:** `selectedAircraft` + `signalLost` state, updates on each poll by matching `hex`, keeps last known state with signal lost indicator if aircraft disappears
+- **Vessel selection:** `selectedVessel` + `vesselSignalLost` state, same pattern as aircraft — updates by MMSI match, signal lost on disappearance
+- **Mutual exclusivity:** clicking an aircraft closes the vessel panel and vice versa; only one detail panel open at a time
+- **Vessel layer toggle:** state hydrated from `localStorage` after mount (avoids SSR mismatch), passed to `useVesselData(enabled)`, turning off clears vessel selection and filters
+- **Independent filtering:** aircraft filters (search, altitude, category) and vessel filters (country, category) operate independently via separate `useMemo` chains
+- **Vessel countries:** dynamically computed from live vessel data, excluding "Unknown" entries, sorted alphabetically
 
 ### Loading / Error / Empty States (src/app/page.tsx)
 
@@ -275,7 +343,7 @@ Attribution is displayed in the map tile layer: `© OpenStreetMap contributors |
 
 ### Vessel Types & Utilities (src/lib/vesselTypes.ts)
 
-- `VesselData` — interface for a single AIS vessel: `mmsi`, `name`, `lat`, `lon`, `cog`, `sog`, `heading`, `shipType`, `destination`, `flag`, `isMilitary`, `militaryCategory`, `lastUpdate`
+- `VesselData` — interface for a single AIS vessel: `mmsi`, `name`, `lat`, `lon`, `cog`, `sog`, `heading`, `shipType`, `destination`, `flag`, `flagCode`, `isMilitary`, `militaryCategory`, `lastUpdate`
 - `VesselCategory` — display category union: `'military' | 'cargo' | 'tanker' | 'passenger' | 'fishing' | 'tug' | 'highspeed' | 'pleasure' | 'other'`
 - `getVesselCategory(shipType)` — maps AIS type code (0-99) to `VesselCategory`
 - `getMIDFromMMSI(mmsi)` — extracts first 3 digits (Maritime Identification Digits) from MMSI
@@ -310,19 +378,7 @@ aisstream.io WSS → aisStreamManager (server singleton) → /api/vessels GET �
 
 ## Additional Data Layers (Planned)
 
-### Layer 1: Maritime Vessel Tracking (AIS) — In Progress (Phase 12)
-
-**Data Source:** aisstream.io WebSocket API (free API key, global coverage)
-
-| Source | URL | Auth | Notes |
-|---|---|---|---|
-| **aisstream.io (active)** | `wss://stream.aisstream.io/v0/stream` | Free API key | Global coverage, WebSocket, real-time |
-
-**Implementation:** Server-side WebSocket connection via `ws` package managed by `aisStreamManager.ts` singleton. API key stored in `AISSTREAM_API_KEY` env var (server-side only). Previous Digitraffic REST implementation was removed in favor of aisstream.io for global coverage. Types and military identification logic in `vesselTypes.ts`. API route and client-side components still to come.
-
-**Military vessel identification:** AIS type code 35 (military ops), type code 55 (law enforcement), warship name patterns (USS, HMS, USCG, etc.), coast guard name patterns, and MMSI prefix 3669 (US federal NTIA assignment). Implemented in `identifyMilitaryVessel()` in `vesselTypes.ts`.
-
-### Layer 2: Satellite Tracking
+### Satellite Tracking
 
 **Data Source Options:**
 
@@ -340,7 +396,7 @@ aisstream.io WSS → aisStreamManager (server singleton) → /api/vessels GET �
 - `https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=json` — GPS constellation
 - `https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json` — All active satellites
 
-### Layer 3: Conflict/Event Data
+### Conflict/Event Data
 
 **Data Source Options:**
 
@@ -358,7 +414,7 @@ aisstream.io WSS → aisStreamManager (server singleton) → /api/vessels GET �
 https://api.gdeltproject.org/api/v2/geo/geo?query=military&mode=pointdata&format=geojson&timespan=24h
 ```
 
-### Layer 4: Airspace Restrictions (NOTAMs/TFRs)
+### Airspace Restrictions (NOTAMs/TFRs)
 
 **Data Source:**
 
@@ -370,7 +426,7 @@ https://api.gdeltproject.org/api/v2/geo/geo?query=military&mode=pointdata&format
 
 **Implementation:** Render TFRs (Temporary Flight Restrictions) as shaded polygon/circle overlays on the map. TFRs often correlate with VIP movement, military exercises, or security events. The FAA API requires a free registration for an API key.
 
-### Layer 5: Nuclear Detonation / Seismic Monitoring
+### Nuclear Detonation / Seismic Monitoring
 
 **Data Source:**
 
@@ -393,20 +449,22 @@ Browser → useLayerData hook → fetch("/api/{layer}") → Proxy Route → Exte
                                                     Cache + Error handling
 ```
 
+The vessel layer uses a variation where the proxy route reads from a server-side WebSocket singleton rather than making an outbound HTTP request:
+
+```
+aisstream.io WSS → aisStreamManager (singleton) → /api/vessels GET → useVesselData → Map
+```
+
 ### Layer Toggle System
 
-A `LayerControl` component allows users to enable/disable each data layer independently. Layer state is managed in `page.tsx` and persisted to `localStorage`.
+The `LayerControl` component allows users to enable/disable data layers independently. Layer state is managed in `page.tsx` and persisted to `localStorage`.
 
-```typescript
-interface DataLayerState {
-  aircraft: boolean;    // default: true
-  vessels: boolean;     // default: false
-  satellites: boolean;  // default: false
-  conflicts: boolean;   // default: false
-  notams: boolean;      // default: false
-  seismic: boolean;     // default: false
-}
-```
+**Currently implemented layers:**
+- **Aircraft** — always on (core feature, no toggle)
+- **Vessels** — toggleable, defaults to off, persisted to `localStorage` key `'overwatch-vessel-layer'`
+
+**Planned layers (not yet implemented):**
+- Satellites, Conflicts, NOTAMs, Seismic — each will follow the same toggle pattern
 
 Each disabled layer stops polling (clears its interval) to conserve bandwidth and API calls.
 
@@ -440,7 +498,7 @@ ws
 ### Approved for future phases (install only when implementing that phase):
 
 ```
-satellite.js           # SGP4 propagator for satellite position calculation (Layer 2)
+satellite.js           # SGP4 propagator for satellite position calculation (Satellite layer)
 ```
 
 ## Testing Approach
@@ -455,11 +513,16 @@ satellite.js           # SGP4 propagator for satellite position calculation (Lay
 - Client polling hooks: catch fetch errors, set an error state, show in StatusBar, continue polling
 - Never crash the app on a failed API request — show "Connection lost" in the status bar and retry on the next interval
 - Each data layer fails independently — one layer going down should not affect others
+- Vessel layer gracefully degrades if API key is missing (shows "API key required" in LayerControl, returns empty data from API route)
+- AIS WebSocket connection errors trigger automatic reconnection with exponential backoff
 
 ## Performance
 
 - The `/v2/mil` endpoint typically returns 200-800 aircraft. This is small enough that no virtualization is needed for markers.
+- Vessel markers use viewport filtering — only vessels within the current map bounds are rendered, supporting 2000+ concurrent vessels
+- Zoom gate on vessel markers: only rendered at zoom level >= 4 to avoid overwhelming the map at world view
 - Use `React.memo` on all marker components to prevent unnecessary re-renders when state hasn't changed.
+- VesselMarker uses a custom memo comparator checking only lat, lon, heading, cog, sog, lastUpdate
 - Do not store historical positions in this MVP — each poll replaces state entirely.
-- Each data layer has independent polling intervals appropriate to its data freshness needs.
+- Each data layer has independent polling intervals appropriate to its data freshness needs (aircraft: 10s, vessels: 15s).
 - Disabled layers do not poll at all.
