@@ -8,11 +8,13 @@ import { VesselData } from "@/lib/vesselTypes";
 import { SatellitePosition } from "@/lib/satelliteTypes";
 import { AirspaceZone } from "@/lib/airspaceTypes";
 import { ConflictEventEnriched } from "@/lib/conflictTypes";
+import { HumanitarianCrisis } from "@/lib/humanitarianTypes";
 import { AircraftMarker } from "./AircraftMarker";
 import { VesselMarker } from "./VesselMarker";
 import { SatelliteMarker } from "./SatelliteMarker";
 import { ConflictMarker } from "./ConflictMarker";
 import { AirspaceOverlay, getZoneBounds } from "./AirspaceOverlay";
+import { HumanitarianOverlay } from "./HumanitarianOverlay";
 
 interface MapProps {
   aircraft: AircraftState[];
@@ -30,6 +32,10 @@ interface MapProps {
   selectedConflict?: ConflictEventEnriched | null;
   onConflictSelect?: (event: ConflictEventEnriched | null) => void;
   conflictsEnabled?: boolean;
+  humanitarianCrises?: HumanitarianCrisis[];
+  humanitarianVisible?: boolean;
+  selectedHumanitarianCrisis?: HumanitarianCrisis | null;
+  onSelectHumanitarianCrisis?: (crisis: HumanitarianCrisis | null) => void;
 }
 
 const DEFAULT_CENTER: [number, number] = [
@@ -50,7 +56,7 @@ const CONFLICT_MIN_ZOOM = 3;
 const VESSEL_MIN_ZOOM = 4;
 const SATELLITE_MIN_ZOOM = 3;
 
-const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, onSatelliteClick, satelliteLayerEnabled, airspaceZones, selectedAirspaceZoneId, onAirspaceZoneClick, airspaceLayerEnabled, conflicts, selectedConflict, onConflictSelect, conflictsEnabled }: MapProps) => {
+const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, onSatelliteClick, satelliteLayerEnabled, airspaceZones, selectedAirspaceZoneId, onAirspaceZoneClick, airspaceLayerEnabled, conflicts, selectedConflict, onConflictSelect, conflictsEnabled, humanitarianCrises, humanitarianVisible, selectedHumanitarianCrisis, onSelectHumanitarianCrisis }: MapProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -140,6 +146,15 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
 
   return (
     <div ref={containerRef} style={{ height: "100%", width: "100%" }}>
+      {mapReady && mapRef.current && (
+        <HumanitarianOverlay
+          map={mapRef.current}
+          crises={humanitarianCrises ?? []}
+          visible={humanitarianVisible ?? false}
+          selectedCrisisId={selectedHumanitarianCrisis?.id ?? null}
+          onSelectCrisis={onSelectHumanitarianCrisis ?? (() => {})}
+        />
+      )}
       {mapReady && mapRef.current && showAirspace && (
         <AirspaceOverlay
           zones={visibleZones}
