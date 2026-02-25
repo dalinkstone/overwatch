@@ -5,6 +5,7 @@ import { AircraftState } from "@/lib/types";
 import { VesselData } from "@/lib/vesselTypes";
 import { SatellitePosition } from "@/lib/satelliteTypes";
 import { AirspaceZone } from "@/lib/airspaceTypes";
+import { ConflictEvent } from "@/lib/conflictTypes";
 
 const Map = dynamic(() => import("./Map"), {
   ssr: false,
@@ -27,6 +28,10 @@ interface MapWrapperProps {
   selectedAirspaceZoneId?: string | null;
   onAirspaceZoneClick?: (zone: AirspaceZone) => void;
   airspaceLayerEnabled?: boolean;
+  conflicts?: ConflictEvent[];
+  selectedConflict?: ConflictEvent | null;
+  onConflictSelect?: (event: ConflictEvent | null) => void;
+  conflictsEnabled?: boolean;
 }
 
 export const MapWrapper = ({
@@ -41,6 +46,10 @@ export const MapWrapper = ({
   selectedAirspaceZoneId,
   onAirspaceZoneClick,
   airspaceLayerEnabled,
+  conflicts,
+  selectedConflict,
+  onConflictSelect,
+  conflictsEnabled,
 }: MapWrapperProps) => {
   return (
     <Map
@@ -55,6 +64,10 @@ export const MapWrapper = ({
       selectedAirspaceZoneId={selectedAirspaceZoneId}
       onAirspaceZoneClick={onAirspaceZoneClick}
       airspaceLayerEnabled={airspaceLayerEnabled}
+      conflicts={conflicts}
+      selectedConflict={selectedConflict}
+      onConflictSelect={onConflictSelect}
+      conflictsEnabled={conflictsEnabled}
     />
   );
 };

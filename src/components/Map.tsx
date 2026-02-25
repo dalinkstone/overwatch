@@ -7,9 +7,11 @@ import { AircraftState, hasPosition } from "@/lib/types";
 import { VesselData } from "@/lib/vesselTypes";
 import { SatellitePosition } from "@/lib/satelliteTypes";
 import { AirspaceZone } from "@/lib/airspaceTypes";
+import { ConflictEvent } from "@/lib/conflictTypes";
 import { AircraftMarker } from "./AircraftMarker";
 import { VesselMarker } from "./VesselMarker";
 import { SatelliteMarker } from "./SatelliteMarker";
+import { ConflictMarker } from "./ConflictMarker";
 import { AirspaceOverlay, getZoneBounds } from "./AirspaceOverlay";
 
 interface MapProps {
@@ -24,6 +26,10 @@ interface MapProps {
   selectedAirspaceZoneId?: string | null;
   onAirspaceZoneClick?: (zone: AirspaceZone) => void;
   airspaceLayerEnabled?: boolean;
+  conflicts?: ConflictEvent[];
+  selectedConflict?: ConflictEvent | null;
+  onConflictSelect?: (event: ConflictEvent | null) => void;
+  conflictsEnabled?: boolean;
 }
 
 const DEFAULT_CENTER: [number, number] = [
@@ -36,13 +42,15 @@ const DEFAULT_ZOOM = parseInt(
 );
 
 const AIRSPACE_PANE = "airspace";
+const CONFLICT_PANE = "conflicts";
 const VESSEL_PANE = "vessels";
 const SATELLITE_PANE = "satellites";
 const AIRSPACE_MIN_ZOOM = 4;
+const CONFLICT_MIN_ZOOM = 3;
 const VESSEL_MIN_ZOOM = 4;
 const SATELLITE_MIN_ZOOM = 3;
 
-const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, onSatelliteClick, satelliteLayerEnabled, airspaceZones, selectedAirspaceZoneId, onAirspaceZoneClick, airspaceLayerEnabled }: MapProps) => {
+const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, onSatelliteClick, satelliteLayerEnabled, airspaceZones, selectedAirspaceZoneId, onAirspaceZoneClick, airspaceLayerEnabled, conflicts, selectedConflict, onConflictSelect, conflictsEnabled }: MapProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -68,6 +76,7 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
     }).addTo(map);
 
     map.createPane(AIRSPACE_PANE).style.zIndex = "420";
+    map.createPane(CONFLICT_PANE).style.zIndex = "430";
     map.createPane(SATELLITE_PANE).style.zIndex = "440";
     map.createPane(VESSEL_PANE).style.zIndex = "450";
 
@@ -89,8 +98,10 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
   const handleVesselClick = onVesselClick ?? (() => {});
   const handleSatelliteClick = onSatelliteClick ?? (() => {});
   const handleAirspaceClick = onAirspaceZoneClick ?? (() => {});
+  const handleConflictSelect = onConflictSelect ?? (() => {});
 
   const showAirspace = airspaceLayerEnabled && zoom >= AIRSPACE_MIN_ZOOM;
+  const showConflicts = conflictsEnabled && zoom >= CONFLICT_MIN_ZOOM;
   const showVessels = zoom >= VESSEL_MIN_ZOOM;
   const showSatellites = satelliteLayerEnabled && zoom >= SATELLITE_MIN_ZOOM;
 
@@ -121,6 +132,11 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
     if (!showSatellites || !bounds || !satellites?.length) return [];
     return satellites.filter((s) => bounds.contains([s.lat, s.lon]));
   }, [satellites, bounds, showSatellites]);
+
+  const visibleConflicts = useMemo(() => {
+    if (!showConflicts || !bounds || !conflicts?.length) return [];
+    return conflicts.filter((c) => bounds.contains([c.lat, c.lon]));
+  }, [conflicts, bounds, showConflicts]);
 
   return (
     <div ref={containerRef} style={{ height: "100%", width: "100%" }}>
@@ -165,6 +181,18 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
             pane={SATELLITE_PANE}
           />
         ))}
+      {mapReady &&
+        mapRef.current &&
+        visibleConflicts.map((c) => (
+          <ConflictMarker
+            key={c.id}
+            event={c}
+            isSelected={selectedConflict?.id === c.id}
+            onClick={() => handleConflictSelect(c)}
+            map={mapRef.current!}
+            pane={CONFLICT_PANE}
+          />
+        ))}
       {mapReady && airspaceLayerEnabled && airspaceZones && airspaceZones.length > 0 && !showAirspace && (
         <div className="absolute bottom-8 left-1/2 z-[600] -translate-x-1/2 rounded bg-zinc-800/90 px-3 py-1.5 text-xs text-zinc-300 shadow-lg backdrop-blur-sm">
           Zoom in to see airspace (zoom {AIRSPACE_MIN_ZOOM}+)
@@ -178,6 +206,11 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
       {mapReady && satelliteLayerEnabled && satellites && satellites.length > 0 && !showSatellites && (
         <div className="absolute bottom-24 left-1/2 z-[600] -translate-x-1/2 rounded bg-zinc-800/90 px-3 py-1.5 text-xs text-zinc-300 shadow-lg backdrop-blur-sm">
           Zoom in to see satellites (zoom {SATELLITE_MIN_ZOOM}+)
+        </div>
+      )}
+      {mapReady && conflictsEnabled && conflicts && conflicts.length > 0 && !showConflicts && (
+        <div className="absolute bottom-32 left-1/2 z-[600] -translate-x-1/2 rounded bg-zinc-800/90 px-3 py-1.5 text-xs text-zinc-300 shadow-lg backdrop-blur-sm">
+          Zoom in to see conflicts (zoom {CONFLICT_MIN_ZOOM}+)
         </div>
       )}
     </div>
