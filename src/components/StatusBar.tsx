@@ -15,6 +15,9 @@ interface StatusBarProps {
   conflictsEnabled?: boolean;
   conflictCount?: number;
   conflictEnrichedCount?: number;
+  humanitarianEnabled?: boolean;
+  humanitarianCount?: number;
+  humanitarianPartial?: boolean;
 }
 
 const formatTime = (date: Date): string => {
@@ -41,6 +44,9 @@ export const StatusBar = ({
   conflictsEnabled,
   conflictCount,
   conflictEnrichedCount,
+  humanitarianEnabled,
+  humanitarianCount,
+  humanitarianPartial,
 }: StatusBarProps) => {
   return (
     <div className="flex items-center justify-between bg-zinc-900 px-4 py-2.5 text-xs text-white">
@@ -119,6 +125,22 @@ export const StatusBar = ({
                 <span className="ml-1 font-mono text-green-400">({conflictEnrichedCount} enriched)</span>
               )}
             </span>
+          </>
+        )}
+        {humanitarianEnabled && humanitarianCount !== undefined && (
+          <>
+            <span className="text-zinc-600">|</span>
+            <span>
+              <span className="text-zinc-500">Humanitarian:</span>{" "}
+              <span className="font-mono text-teal-400">{humanitarianCount.toLocaleString()}</span>
+              <span className="ml-0.5 text-zinc-500">{humanitarianCount === 1 ? "country" : "countries"}</span>
+            </span>
+            {humanitarianPartial && (
+              <>
+                <span className="text-zinc-600">|</span>
+                <span className="text-amber-400">Humanitarian data partial</span>
+              </>
+            )}
           </>
         )}
       </div>

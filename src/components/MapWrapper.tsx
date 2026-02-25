@@ -6,6 +6,7 @@ import { VesselData } from "@/lib/vesselTypes";
 import { SatellitePosition } from "@/lib/satelliteTypes";
 import { AirspaceZone } from "@/lib/airspaceTypes";
 import { ConflictEventEnriched } from "@/lib/conflictTypes";
+import { HumanitarianCrisis } from "@/lib/humanitarianTypes";
 
 const Map = dynamic(() => import("./Map"), {
   ssr: false,
@@ -32,6 +33,10 @@ interface MapWrapperProps {
   selectedConflict?: ConflictEventEnriched | null;
   onConflictSelect?: (event: ConflictEventEnriched | null) => void;
   conflictsEnabled?: boolean;
+  humanitarianCrises?: HumanitarianCrisis[];
+  humanitarianVisible?: boolean;
+  selectedHumanitarianCrisis?: HumanitarianCrisis | null;
+  onSelectHumanitarianCrisis?: (crisis: HumanitarianCrisis | null) => void;
 }
 
 export const MapWrapper = ({
@@ -50,6 +55,10 @@ export const MapWrapper = ({
   selectedConflict,
   onConflictSelect,
   conflictsEnabled,
+  humanitarianCrises,
+  humanitarianVisible,
+  selectedHumanitarianCrisis,
+  onSelectHumanitarianCrisis,
 }: MapWrapperProps) => {
   return (
     <Map
@@ -68,6 +77,10 @@ export const MapWrapper = ({
       selectedConflict={selectedConflict}
       onConflictSelect={onConflictSelect}
       conflictsEnabled={conflictsEnabled}
+      humanitarianCrises={humanitarianCrises}
+      humanitarianVisible={humanitarianVisible}
+      selectedHumanitarianCrisis={selectedHumanitarianCrisis}
+      onSelectHumanitarianCrisis={onSelectHumanitarianCrisis}
     />
   );
 };

@@ -13,17 +13,21 @@ import { AirspaceFilterBar } from "@/components/AirspaceFilterBar";
 import { AirspacePanel } from "@/components/AirspacePanel";
 import { ConflictFilterBar } from "@/components/ConflictFilterBar";
 import { ConflictPanel } from "@/components/ConflictPanel";
+import { HumanitarianFilterBar } from "@/components/HumanitarianFilterBar";
+import { HumanitarianPanel } from "@/components/HumanitarianPanel";
 import { LayerControl } from "@/components/LayerControl";
 import { useAircraftData } from "@/hooks/useAircraftData";
 import { useVesselData } from "@/hooks/useVesselData";
 import { useSatelliteData } from "@/hooks/useSatelliteData";
 import { useAirspaceData } from "@/hooks/useAirspaceData";
 import { useConflictData } from "@/hooks/useConflictData";
+import { useHumanitarianData } from "@/hooks/useHumanitarianData";
 import { AircraftState } from "@/lib/types";
 import { VesselData, VesselCategory, getVesselCategory } from "@/lib/vesselTypes";
 import { SatellitePosition, SatelliteCategory } from "@/lib/satelliteTypes";
 import { AirspaceType, TfrType, AirspaceZone } from "@/lib/airspaceTypes";
 import { ConflictEventEnriched, ConflictCategory, ConflictActorType, ConflictFilters } from "@/lib/conflictTypes";
+import { HumanitarianCrisis, HumanitarianCrisisType } from "@/lib/humanitarianTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 import { getCountryFromHex } from "@/lib/countryLookup";
 
@@ -31,6 +35,7 @@ const VESSEL_LAYER_KEY = "overwatch-vessel-layer";
 const SATELLITE_LAYER_KEY = "overwatch-satellite-layer";
 const AIRSPACE_LAYER_KEY = "overwatch-airspace-layer";
 const CONFLICT_LAYER_KEY = "overwatch-conflict-layer";
+const HUMANITARIAN_LAYER_KEY = "overwatch-humanitarian-layer";
 
 const matchesSearch = (ac: AircraftState, query: string): boolean => {
   const q = query.toLowerCase();
@@ -116,6 +121,9 @@ export default function Home() {
   const [conflictsEnabled, setConflictsEnabled] = useState(false);
   const { events: conflictEvents } = useConflictData(conflictsEnabled);
 
+  const [humanitarianEnabled, setHumanitarianEnabled] = useState(false);
+  const { crises: humanitarianCrises, loading: _humanitarianLoading, error: _humanitarianError, totalCountries: _humanitarianTotalCountries, totalDisasters: _humanitarianTotalDisasters, partial: humanitarianPartial } = useHumanitarianData(humanitarianEnabled);
+
   // Hydrate layer toggles from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
     try {
@@ -130,6 +138,9 @@ export default function Home() {
       }
       if (localStorage.getItem(CONFLICT_LAYER_KEY) === "true") {
         setConflictsEnabled(true);
+      }
+      if (localStorage.getItem(HUMANITARIAN_LAYER_KEY) === "true") {
+        setHumanitarianEnabled(true);
       }
     } catch {
       // localStorage unavailable
@@ -211,6 +222,21 @@ export default function Home() {
     }
   }, []);
 
+  const handleHumanitarianToggle = useCallback((enabled: boolean) => {
+    setHumanitarianEnabled(enabled);
+    try {
+      localStorage.setItem(HUMANITARIAN_LAYER_KEY, String(enabled));
+    } catch {
+      // localStorage unavailable
+    }
+    if (!enabled) {
+      setSelectedHumanitarianCrisis(null);
+      setHumanitarianSearchQuery("");
+      setHumanitarianSeverityFilter("all");
+      setHumanitarianTypeFilter("all");
+    }
+  }, []);
+
   const [selectedAircraft, setSelectedAircraft] =
     useState<AircraftState | null>(null);
   const [signalLost, setSignalLost] = useState(false);
@@ -229,6 +255,11 @@ export default function Home() {
   const selectedAirspaceIdRef = useRef<string | null>(null);
 
   const [selectedConflict, setSelectedConflict] = useState<ConflictEventEnriched | null>(null);
+
+  const [selectedHumanitarianCrisis, setSelectedHumanitarianCrisis] = useState<HumanitarianCrisis | null>(null);
+  const [humanitarianSearchQuery, setHumanitarianSearchQuery] = useState("");
+  const [humanitarianSeverityFilter, setHumanitarianSeverityFilter] = useState<HumanitarianCrisis['severity'] | 'all'>('all');
+  const [humanitarianTypeFilter, setHumanitarianTypeFilter] = useState<HumanitarianCrisisType | 'all'>('all');
 
   const [searchQuery, setSearchQuery] = useState("");
   const [altitudeFilter, setAltitudeFilter] = useState("all");
@@ -398,6 +429,30 @@ export default function Home() {
     return filtered;
   }, [conflictEvents, conflictFilters]);
 
+  const filteredHumanitarianCrises = useMemo(() => {
+    let filtered = humanitarianCrises;
+
+    if (humanitarianSearchQuery.trim()) {
+      const q = humanitarianSearchQuery.trim().toLowerCase();
+      filtered = filtered.filter(c =>
+        c.country.toLowerCase().includes(q) ||
+        c.disasters.some(d => d.name.toLowerCase().includes(q))
+      );
+    }
+
+    if (humanitarianSeverityFilter !== 'all') {
+      filtered = filtered.filter(c => c.severity === humanitarianSeverityFilter);
+    }
+
+    if (humanitarianTypeFilter !== 'all') {
+      filtered = filtered.filter(c =>
+        c.disasters.some(d => d.type === humanitarianTypeFilter)
+      );
+    }
+
+    return filtered;
+  }, [humanitarianCrises, humanitarianSearchQuery, humanitarianSeverityFilter, humanitarianTypeFilter]);
+
   const conflictEnrichedCount = useMemo(
     () => conflictEvents.filter(e => e.isEnriched).length,
     [conflictEvents],
@@ -439,6 +494,7 @@ export default function Home() {
     setAirspaceSignalLost(false);
     selectedAirspaceIdRef.current = null;
     setSelectedConflict(null);
+    setSelectedHumanitarianCrisis(null);
   }, []);
 
   const handleCloseAircraftPanel = useCallback(() => {
@@ -462,6 +518,7 @@ export default function Home() {
     setAirspaceSignalLost(false);
     selectedAirspaceIdRef.current = null;
     setSelectedConflict(null);
+    setSelectedHumanitarianCrisis(null);
   }, []);
 
   const handleCloseVesselPanel = useCallback(() => {
@@ -485,6 +542,7 @@ export default function Home() {
     setAirspaceSignalLost(false);
     selectedAirspaceIdRef.current = null;
     setSelectedConflict(null);
+    setSelectedHumanitarianCrisis(null);
   }, []);
 
   const handleCloseSatellitePanel = useCallback(() => {
@@ -508,6 +566,7 @@ export default function Home() {
     setSatelliteSignalLost(false);
     selectedNoradRef.current = null;
     setSelectedConflict(null);
+    setSelectedHumanitarianCrisis(null);
   }, []);
 
   const handleCloseAirspacePanel = useCallback(() => {
@@ -532,10 +591,34 @@ export default function Home() {
     setSelectedAirspace(null);
     setAirspaceSignalLost(false);
     selectedAirspaceIdRef.current = null;
+    setSelectedHumanitarianCrisis(null);
   }, []);
 
   const handleCloseConflictPanel = useCallback(() => {
     setSelectedConflict(null);
+  }, []);
+
+  const handleHumanitarianCrisisClick = useCallback((crisis: HumanitarianCrisis | null) => {
+    setSelectedHumanitarianCrisis(crisis);
+    if (!crisis) return;
+    // Close other panels (mutual exclusivity)
+    setSelectedAircraft(null);
+    setSignalLost(false);
+    selectedHexRef.current = null;
+    setSelectedVessel(null);
+    setVesselSignalLost(false);
+    selectedMmsiRef.current = null;
+    setSelectedSatellite(null);
+    setSatelliteSignalLost(false);
+    selectedNoradRef.current = null;
+    setSelectedAirspace(null);
+    setAirspaceSignalLost(false);
+    selectedAirspaceIdRef.current = null;
+    setSelectedConflict(null);
+  }, []);
+
+  const handleCloseHumanitarianPanel = useCallback(() => {
+    setSelectedHumanitarianCrisis(null);
   }, []);
 
   // Update selected aircraft data when new poll results arrive
@@ -608,6 +691,9 @@ export default function Home() {
         conflictsEnabled={conflictsEnabled}
         conflictCount={filteredConflicts.length}
         conflictEnrichedCount={conflictEnrichedCount}
+        humanitarianEnabled={humanitarianEnabled}
+        humanitarianCount={filteredHumanitarianCrises.length}
+        humanitarianPartial={humanitarianPartial}
       />
       <FilterBar
         searchQuery={searchQuery}
@@ -682,6 +768,17 @@ export default function Home() {
           enrichedCount={conflictEnrichedCount}
         />
       )}
+      {humanitarianEnabled && (
+        <HumanitarianFilterBar
+          crises={filteredHumanitarianCrises}
+          searchQuery={humanitarianSearchQuery}
+          onSearchChange={setHumanitarianSearchQuery}
+          severityFilter={humanitarianSeverityFilter}
+          onSeverityChange={setHumanitarianSeverityFilter}
+          typeFilter={humanitarianTypeFilter}
+          onTypeChange={setHumanitarianTypeFilter}
+        />
+      )}
       {/* Error banner — non-blocking, shows below filter bar */}
       {error && !loading && (
         <div className="flex items-center gap-2 bg-red-900/70 px-4 py-1.5 text-xs text-red-200">
@@ -713,6 +810,10 @@ export default function Home() {
           selectedConflict={selectedConflict}
           onConflictSelect={handleConflictClick}
           conflictsEnabled={conflictsEnabled}
+          humanitarianCrises={humanitarianEnabled ? filteredHumanitarianCrises : []}
+          humanitarianVisible={humanitarianEnabled}
+          selectedHumanitarianCrisis={selectedHumanitarianCrisis}
+          onSelectHumanitarianCrisis={handleHumanitarianCrisisClick}
         />
         {/* Loading overlay */}
         {loading && (
@@ -759,6 +860,12 @@ export default function Home() {
           onClose={handleCloseConflictPanel}
           allEvents={conflictEvents}
         />
+        {selectedHumanitarianCrisis && (
+          <HumanitarianPanel
+            crisis={selectedHumanitarianCrisis}
+            onClose={handleCloseHumanitarianPanel}
+          />
+        )}
         <LayerControl
           aircraftCount={filteredAircraft.length}
           vesselEnabled={vesselEnabled}
@@ -778,6 +885,10 @@ export default function Home() {
           onConflictToggle={handleConflictToggle}
           conflictCount={filteredConflicts.length}
           conflictTotalCount={conflictEvents.length}
+          humanitarianEnabled={humanitarianEnabled}
+          onHumanitarianToggle={handleHumanitarianToggle}
+          humanitarianCount={filteredHumanitarianCrises.length}
+          humanitarianTotalCount={humanitarianCrises.length}
         />
       </div>
     </main>

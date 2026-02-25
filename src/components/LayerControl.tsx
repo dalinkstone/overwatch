@@ -27,6 +27,10 @@ interface LayerControlProps {
   onConflictToggle: (enabled: boolean) => void;
   conflictCount: number;
   conflictTotalCount?: number;
+  humanitarianEnabled: boolean;
+  onHumanitarianToggle: (enabled: boolean) => void;
+  humanitarianCount: number;
+  humanitarianTotalCount?: number;
 }
 
 const getVesselStatusDot = (
@@ -69,6 +73,10 @@ export const LayerControl = ({
   onConflictToggle,
   conflictCount,
   conflictTotalCount,
+  humanitarianEnabled,
+  onHumanitarianToggle,
+  humanitarianCount,
+  humanitarianTotalCount,
 }: LayerControlProps) => {
   const isDisabled = vesselStatus.state === "disabled";
   const statusDot = getVesselStatusDot(vesselEnabled, vesselStatus.state);
@@ -308,6 +316,59 @@ export const LayerControl = ({
           title={
             conflictsEnabled
               ? (conflictTotalCount ?? conflictCount) > 0
+                ? "Data loaded"
+                : "Loading..."
+              : "Off"
+          }
+        />
+      </div>
+
+      {/* Humanitarian row — toggleable */}
+      <div
+        className="flex items-center gap-2 py-1 cursor-pointer"
+        onClick={() => onHumanitarianToggle(!humanitarianEnabled)}
+        title={humanitarianEnabled ? `Humanitarian: ${humanitarianCount} countries` : "Humanitarian: Off"}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={humanitarianEnabled ? "#14b8a6" : "#6b7280"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+          <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+        </svg>
+        <span className="text-xs text-zinc-200">
+          {humanitarianEnabled
+            ? humanitarianTotalCount !== undefined && humanitarianCount !== humanitarianTotalCount
+              ? `Humanitarian (${humanitarianCount.toLocaleString()} of ${humanitarianTotalCount.toLocaleString()})`
+              : `Humanitarian (${humanitarianCount.toLocaleString()})`
+            : "Humanitarian"}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={humanitarianEnabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            onHumanitarianToggle(!humanitarianEnabled);
+          }}
+          className={`ml-auto relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors cursor-pointer ${
+            humanitarianEnabled ? "bg-teal-500" : "bg-zinc-600"
+          }`}
+        >
+          <span
+            className={`inline-block h-3 w-3 rounded-full bg-white shadow transform transition-transform mt-0.5 ${
+              humanitarianEnabled ? "translate-x-3.5 ml-0" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+        <span
+          className="h-2 w-2 rounded-full shrink-0"
+          style={{
+            backgroundColor: humanitarianEnabled
+              ? (humanitarianTotalCount ?? humanitarianCount) > 0
+                ? "#22c55e"
+                : "#eab308"
+              : "#6b7280",
+          }}
+          title={
+            humanitarianEnabled
+              ? (humanitarianTotalCount ?? humanitarianCount) > 0
                 ? "Data loaded"
                 : "Loading..."
               : "Off"
