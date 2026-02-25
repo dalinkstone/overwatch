@@ -23,6 +23,10 @@ interface LayerControlProps {
   onAirspaceToggle: (enabled: boolean) => void;
   airspaceCount: number;
   airspaceTotalCount?: number;
+  conflictsEnabled: boolean;
+  onConflictToggle: (enabled: boolean) => void;
+  conflictCount: number;
+  conflictTotalCount?: number;
 }
 
 const getVesselStatusDot = (
@@ -61,6 +65,10 @@ export const LayerControl = ({
   onAirspaceToggle,
   airspaceCount,
   airspaceTotalCount,
+  conflictsEnabled,
+  onConflictToggle,
+  conflictCount,
+  conflictTotalCount,
 }: LayerControlProps) => {
   const isDisabled = vesselStatus.state === "disabled";
   const statusDot = getVesselStatusDot(vesselEnabled, vesselStatus.state);
@@ -245,6 +253,61 @@ export const LayerControl = ({
           title={
             airspaceEnabled
               ? (airspaceTotalCount ?? airspaceCount) > 0
+                ? "Data loaded"
+                : "Loading..."
+              : "Off"
+          }
+        />
+      </div>
+
+      {/* Conflict row — toggleable */}
+      <div
+        className="flex items-center gap-2 py-1 cursor-pointer"
+        onClick={() => onConflictToggle(!conflictsEnabled)}
+        title={conflictsEnabled ? `Conflicts: ${conflictCount} events` : "Conflicts: Off"}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={conflictsEnabled ? "#ef4444" : "#6b7280"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <span className="text-xs text-zinc-200">
+          {conflictsEnabled
+            ? conflictTotalCount !== undefined && conflictCount !== conflictTotalCount
+              ? `Conflicts (${conflictCount.toLocaleString()} of ${conflictTotalCount.toLocaleString()})`
+              : `Conflicts (${conflictCount.toLocaleString()})`
+            : "Conflicts"}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={conflictsEnabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            onConflictToggle(!conflictsEnabled);
+          }}
+          className={`ml-auto relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors cursor-pointer ${
+            conflictsEnabled ? "bg-red-500" : "bg-zinc-600"
+          }`}
+        >
+          <span
+            className={`inline-block h-3 w-3 rounded-full bg-white shadow transform transition-transform mt-0.5 ${
+              conflictsEnabled ? "translate-x-3.5 ml-0" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+        <span
+          className="h-2 w-2 rounded-full shrink-0"
+          style={{
+            backgroundColor: conflictsEnabled
+              ? (conflictTotalCount ?? conflictCount) > 0
+                ? "#22c55e"
+                : "#eab308"
+              : "#6b7280",
+          }}
+          title={
+            conflictsEnabled
+              ? (conflictTotalCount ?? conflictCount) > 0
                 ? "Data loaded"
                 : "Loading..."
               : "Off"

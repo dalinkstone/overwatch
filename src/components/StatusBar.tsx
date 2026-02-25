@@ -12,6 +12,8 @@ interface StatusBarProps {
   satelliteError?: string | null;
   airspaceEnabled?: boolean;
   airspaceCount?: number;
+  conflictsEnabled?: boolean;
+  conflictCount?: number;
 }
 
 const formatTime = (date: Date): string => {
@@ -35,6 +37,8 @@ export const StatusBar = ({
   satelliteError,
   airspaceEnabled,
   airspaceCount,
+  conflictsEnabled,
+  conflictCount,
 }: StatusBarProps) => {
   return (
     <div className="flex items-center justify-between bg-zinc-900 px-4 py-2.5 text-xs text-white">
@@ -100,6 +104,15 @@ export const StatusBar = ({
             <span>
               <span className="text-zinc-500">Airspace:</span>{" "}
               <span className="font-mono text-orange-400">{airspaceCount.toLocaleString()}</span>
+            </span>
+          </>
+        )}
+        {conflictsEnabled && conflictCount !== undefined && (
+          <>
+            <span className="text-zinc-600">|</span>
+            <span>
+              <span className="text-zinc-500">Conflicts:</span>{" "}
+              <span className="font-mono text-red-400">{conflictCount.toLocaleString()}</span>
             </span>
           </>
         )}

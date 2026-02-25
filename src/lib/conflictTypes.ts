@@ -87,8 +87,8 @@ export const CONFLICT_CATEGORY_COLORS: Record<ConflictCategory, string> = {
   coerce: '#f97316',       // orange-500
   assault: '#ef4444',      // red-500
   fight: '#dc2626',        // red-600
-  'mass-violence': '#7f1d1d', // red-900
-  other: '#6b7280',        // gray-500
+  'mass-violence': '#991b1b', // red-800
+  other: '#f59e0b',        // amber-500 — visible on map
 };
 
 /** Get the display color for a conflict category. */

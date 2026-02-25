@@ -11,21 +11,26 @@ import { SatelliteFilterBar } from "@/components/SatelliteFilterBar";
 import { SatellitePanel } from "@/components/SatellitePanel";
 import { AirspaceFilterBar } from "@/components/AirspaceFilterBar";
 import { AirspacePanel } from "@/components/AirspacePanel";
+import { ConflictFilterBar } from "@/components/ConflictFilterBar";
+import { ConflictPanel } from "@/components/ConflictPanel";
 import { LayerControl } from "@/components/LayerControl";
 import { useAircraftData } from "@/hooks/useAircraftData";
 import { useVesselData } from "@/hooks/useVesselData";
 import { useSatelliteData } from "@/hooks/useSatelliteData";
 import { useAirspaceData } from "@/hooks/useAirspaceData";
+import { useConflictData } from "@/hooks/useConflictData";
 import { AircraftState } from "@/lib/types";
 import { VesselData, VesselCategory, getVesselCategory } from "@/lib/vesselTypes";
 import { SatellitePosition, SatelliteCategory } from "@/lib/satelliteTypes";
 import { AirspaceType, TfrType, AirspaceZone } from "@/lib/airspaceTypes";
+import { ConflictEvent, ConflictCategory, ConflictFilters } from "@/lib/conflictTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 import { getCountryFromHex } from "@/lib/countryLookup";
 
 const VESSEL_LAYER_KEY = "overwatch-vessel-layer";
 const SATELLITE_LAYER_KEY = "overwatch-satellite-layer";
 const AIRSPACE_LAYER_KEY = "overwatch-airspace-layer";
+const CONFLICT_LAYER_KEY = "overwatch-conflict-layer";
 
 const matchesSearch = (ac: AircraftState, query: string): boolean => {
   const q = query.toLowerCase();
@@ -108,6 +113,9 @@ export default function Home() {
   const [airspaceEnabled, setAirspaceEnabled] = useState(false);
   const { zones: airspaceActiveZones, allZones: airspaceAllZones } = useAirspaceData(airspaceEnabled);
 
+  const [conflictsEnabled, setConflictsEnabled] = useState(false);
+  const { events: conflictEvents } = useConflictData(conflictsEnabled);
+
   // Hydrate layer toggles from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
     try {
@@ -119,6 +127,9 @@ export default function Home() {
       }
       if (localStorage.getItem(AIRSPACE_LAYER_KEY) === "true") {
         setAirspaceEnabled(true);
+      }
+      if (localStorage.getItem(CONFLICT_LAYER_KEY) === "true") {
+        setConflictsEnabled(true);
       }
     } catch {
       // localStorage unavailable
@@ -180,6 +191,23 @@ export default function Home() {
     }
   }, []);
 
+  const handleConflictToggle = useCallback((enabled: boolean) => {
+    setConflictsEnabled(enabled);
+    try {
+      localStorage.setItem(CONFLICT_LAYER_KEY, String(enabled));
+    } catch {
+      // localStorage unavailable
+    }
+    if (!enabled) {
+      setSelectedConflict(null);
+      setConflictFilters({
+        search: '',
+        categories: new Set<ConflictCategory>(['coerce', 'assault', 'fight', 'mass-violence', 'other']),
+        timeframe: '24h' as const,
+      });
+    }
+  }, []);
+
   const [selectedAircraft, setSelectedAircraft] =
     useState<AircraftState | null>(null);
   const [signalLost, setSignalLost] = useState(false);
@@ -196,6 +224,8 @@ export default function Home() {
   const [selectedAirspace, setSelectedAirspace] = useState<AirspaceZone | null>(null);
   const [airspaceSignalLost, setAirspaceSignalLost] = useState(false);
   const selectedAirspaceIdRef = useRef<string | null>(null);
+
+  const [selectedConflict, setSelectedConflict] = useState<ConflictEvent | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [altitudeFilter, setAltitudeFilter] = useState("all");
@@ -216,6 +246,12 @@ export default function Home() {
   const [airspaceTypeFilter, setAirspaceTypeFilter] = useState<AirspaceType | "all">("all");
   const [airspaceTfrTypeFilter, setAirspaceTfrTypeFilter] = useState<TfrType | "all">("all");
   const [airspaceActiveOnly, setAirspaceActiveOnly] = useState(true);
+
+  const [conflictFilters, setConflictFilters] = useState<ConflictFilters>({
+    search: '',
+    categories: new Set<ConflictCategory>(['coerce', 'assault', 'fight', 'mass-violence', 'other']),
+    timeframe: '24h' as const,
+  });
 
   const filteredAircraft = useMemo(() => {
     let result = aircraft;
@@ -312,6 +348,32 @@ export default function Home() {
 
   const airspaceTotalCount = airspaceActiveOnly ? airspaceActiveZones.length : airspaceAllZones.length;
 
+  const filteredConflicts = useMemo(() => {
+    let filtered = conflictEvents;
+
+    // Search filter: case-insensitive substring on name and domain
+    if (conflictFilters.search) {
+      const q = conflictFilters.search.toLowerCase();
+      filtered = filtered.filter(e =>
+        e.name.toLowerCase().includes(q) || e.domain.toLowerCase().includes(q)
+      );
+    }
+
+    // Category filter
+    if (conflictFilters.categories.size > 0 && conflictFilters.categories.size < 5) {
+      filtered = filtered.filter(e => conflictFilters.categories.has(e.category));
+    }
+
+    // Timeframe filter
+    if (conflictFilters.timeframe !== '24h') {
+      const now = Date.now();
+      const cutoff = conflictFilters.timeframe === '1h' ? 3600000 : 21600000;
+      filtered = filtered.filter(e => now - new Date(e.dateAdded).getTime() < cutoff);
+    }
+
+    return filtered;
+  }, [conflictEvents, conflictFilters]);
+
   const aircraftCountries = useMemo(() => {
     const countrySet = new Set<string>();
     for (const ac of aircraft) {
@@ -347,6 +409,7 @@ export default function Home() {
     setSelectedAirspace(null);
     setAirspaceSignalLost(false);
     selectedAirspaceIdRef.current = null;
+    setSelectedConflict(null);
   }, []);
 
   const handleCloseAircraftPanel = useCallback(() => {
@@ -369,6 +432,7 @@ export default function Home() {
     setSelectedAirspace(null);
     setAirspaceSignalLost(false);
     selectedAirspaceIdRef.current = null;
+    setSelectedConflict(null);
   }, []);
 
   const handleCloseVesselPanel = useCallback(() => {
@@ -391,6 +455,7 @@ export default function Home() {
     setSelectedAirspace(null);
     setAirspaceSignalLost(false);
     selectedAirspaceIdRef.current = null;
+    setSelectedConflict(null);
   }, []);
 
   const handleCloseSatellitePanel = useCallback(() => {
@@ -413,12 +478,35 @@ export default function Home() {
     setSelectedSatellite(null);
     setSatelliteSignalLost(false);
     selectedNoradRef.current = null;
+    setSelectedConflict(null);
   }, []);
 
   const handleCloseAirspacePanel = useCallback(() => {
     setSelectedAirspace(null);
     setAirspaceSignalLost(false);
     selectedAirspaceIdRef.current = null;
+  }, []);
+
+  const handleConflictClick = useCallback((event: ConflictEvent | null) => {
+    setSelectedConflict(event);
+    if (!event) return;
+    // Close other panels (mutual exclusivity)
+    setSelectedAircraft(null);
+    setSignalLost(false);
+    selectedHexRef.current = null;
+    setSelectedVessel(null);
+    setVesselSignalLost(false);
+    selectedMmsiRef.current = null;
+    setSelectedSatellite(null);
+    setSatelliteSignalLost(false);
+    selectedNoradRef.current = null;
+    setSelectedAirspace(null);
+    setAirspaceSignalLost(false);
+    selectedAirspaceIdRef.current = null;
+  }, []);
+
+  const handleCloseConflictPanel = useCallback(() => {
+    setSelectedConflict(null);
   }, []);
 
   // Update selected aircraft data when new poll results arrive
@@ -488,6 +576,8 @@ export default function Home() {
         satelliteError={satelliteError}
         airspaceEnabled={airspaceEnabled}
         airspaceCount={filteredAirspaces.length}
+        conflictsEnabled={conflictsEnabled}
+        conflictCount={filteredConflicts.length}
       />
       <FilterBar
         searchQuery={searchQuery}
@@ -543,6 +633,18 @@ export default function Home() {
           totalCount={airspaceTotalCount}
         />
       )}
+      {conflictsEnabled && (
+        <ConflictFilterBar
+          search={conflictFilters.search}
+          onSearchChange={(value) => setConflictFilters(prev => ({ ...prev, search: value }))}
+          categories={conflictFilters.categories}
+          onCategoriesChange={(categories) => setConflictFilters(prev => ({ ...prev, categories }))}
+          timeframe={conflictFilters.timeframe}
+          onTimeframeChange={(timeframe) => setConflictFilters(prev => ({ ...prev, timeframe }))}
+          totalCount={conflictEvents.length}
+          filteredCount={filteredConflicts.length}
+        />
+      )}
       {/* Error banner — non-blocking, shows below filter bar */}
       {error && !loading && (
         <div className="flex items-center gap-2 bg-red-900/70 px-4 py-1.5 text-xs text-red-200">
@@ -570,6 +672,10 @@ export default function Home() {
           selectedAirspaceZoneId={selectedAirspace?.id ?? null}
           onAirspaceZoneClick={handleAirspaceZoneClick}
           airspaceLayerEnabled={airspaceEnabled}
+          conflicts={conflictsEnabled ? filteredConflicts : []}
+          selectedConflict={selectedConflict}
+          onConflictSelect={handleConflictClick}
+          conflictsEnabled={conflictsEnabled}
         />
         {/* Loading overlay */}
         {loading && (
@@ -611,6 +717,11 @@ export default function Home() {
           onClose={handleCloseAirspacePanel}
           signalLost={airspaceSignalLost}
         />
+        <ConflictPanel
+          event={selectedConflict}
+          onClose={handleCloseConflictPanel}
+          allEvents={conflictEvents}
+        />
         <LayerControl
           aircraftCount={filteredAircraft.length}
           vesselEnabled={vesselEnabled}
@@ -626,6 +737,10 @@ export default function Home() {
           onAirspaceToggle={handleAirspaceToggle}
           airspaceCount={filteredAirspaces.length}
           airspaceTotalCount={airspaceTotalCount}
+          conflictsEnabled={conflictsEnabled}
+          onConflictToggle={handleConflictToggle}
+          conflictCount={filteredConflicts.length}
+          conflictTotalCount={conflictEvents.length}
         />
       </div>
     </main>
