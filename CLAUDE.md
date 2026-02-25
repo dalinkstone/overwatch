@@ -4,7 +4,7 @@ Real-time military movement intelligence dashboard. Next.js 16 App Router, TypeS
 
 ## Status
 
-**Active layers:** Aircraft (ADSB.lol), Vessels (aisstream.io), Satellites (CelesTrak), Airspace (FAA ArcGIS + FAA TFR API), Conflicts (GDELT)
+**Active layers:** Aircraft (ADSB.lol), Vessels (aisstream.io), Satellites (CelesTrak), Airspace (FAA ArcGIS + FAA TFR API), Conflicts (GDELT), Humanitarian (ReliefWeb) (in progress — types, route, and hook complete; UI pending)
 **Planned layers:** Seismic (USGS)
 
 All phases complete. Every file listed in the project structure below is implemented and working.
@@ -71,6 +71,7 @@ Managed in `page.tsx`, persisted to `localStorage`. Aircraft always on; vessels/
 | Satellites | `overwatch-satellite-layer` | off | TLE: 30min, positions: 30s |
 | Airspace | `overwatch-airspace-layer` | off | 5min |
 | Conflicts | `overwatch-conflict-layer` | off | 10min |
+| Humanitarian | `overwatch-humanitarian-layer` | off | 30min |
 
 ## Data Sources
 
@@ -161,6 +162,33 @@ Two data sources merged per poll cycle:
 **Categories (5):** coerce (orange `#f97316`), assault (red `#ef4444`), fight (dark red `#dc2626`), mass-violence (deep red `#991b1b`), other (amber `#f59e0b`). Enriched events use CAMEO root code directly; unenriched fall back to keyword regex.
 
 **Markers:** 6-pointed starburst SVG with white center dot. Enriched events get thin white outer ring. Size by source count: >=10 sources → 22px, >=5 → 20px, default 18px, selected 24px. Category-colored fill, black stroke. Pane z-430. Zoom gate >= 3.
+
+### Humanitarian — ReliefWeb (UN OCHA)
+
+Two parallel requests merged per poll cycle:
+
+**Request 1 — Active Disasters:**
+- **Endpoint:** `GET https://api.reliefweb.int/v1/disasters?appname=overwatch&filter[field]=status&filter[value]=ongoing&limit=500`
+- **Fields:** name, glide, primary_country (iso3, name, location), type, status, date.created, url
+- **Auth:** Requires pre-approved `appname` query parameter (register at https://apidoc.reliefweb.int/). Configurable via `RELIEFWEB_APPNAME` env var (default: `overwatch`).
+
+**Request 2 — Recent Reports (last 30 days):**
+- **Endpoint:** `GET https://api.reliefweb.int/v1/reports?appname=overwatch&filter[field]=date.created&filter[value][from]=<30d_ago>&limit=1000`
+- **Fields:** title, url, primary_country (iso3, name), date.created, disaster.name
+
+**Processing:** Disasters grouped by `primary_country.iso3`. Reports grouped by `primary_country.iso3`, counted per country, latest report tracked. For each country with disasters OR reports, creates a `HumanitarianCrisis` object with centroid from `getCountryCentroid()`. Countries without a centroid in the lookup table are skipped.
+
+**Severity classification:** Derived from `getSeverityFromData()`:
+- critical: reportCount >= 50 OR disasterCount >= 3 OR types includes complex-emergency
+- major: reportCount >= 20 OR disasterCount >= 2 OR types includes conflict
+- moderate: reportCount >= 5
+- minor: everything else
+
+**Severity colors (4):** critical (deep red `#991b1b`), major (red `#dc2626`), moderate (orange `#f97316`), minor (yellow `#eab308`).
+
+**Rendering:** Choropleth country-level polygon shading (NOT point markers). ISO3 code used for joining to GeoJSON country boundaries.
+
+**Server cache:** 30min. Polling interval: 30min. `partial: true` when one ReliefWeb endpoint fails. Both fail → return stale cache or 502. No new dependencies added.
 
 ## Component Details
 
@@ -268,6 +296,7 @@ Do not add others without explicit approval.
 | `NEXT_PUBLIC_DEFAULT_LNG` | No (default: `-77.0`) | Map center lng |
 | `NEXT_PUBLIC_DEFAULT_ZOOM` | No (default: `5`) | Map zoom |
 | `AISSTREAM_API_KEY` | No | aisstream.io key (server-side only) |
+| `RELIEFWEB_APPNAME` | No (default: `overwatch`) | ReliefWeb API appname (requires pre-approval at https://apidoc.reliefweb.int/) |
 
 ## Attribution
 
@@ -282,3 +311,4 @@ Do not add others without explicit approval.
 | FAA ArcGIS (SUA) | Free, no auth |
 | FAA TFR API/GeoServer | Free, no auth |
 | GDELT Project | Free, no auth |
+| ReliefWeb (UN OCHA) | Free, no auth |
