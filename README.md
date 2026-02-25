@@ -14,7 +14,9 @@ Overwatch aggregates multiple publicly available data sources to create a compre
 
 **Airspace Restriction Tracking** — The airspace layer overlays restricted airspace zones on the map, including FAA Special Use Airspace (Restricted Areas, Prohibited Areas, MOAs, Warning Areas, Alert Areas) and active Temporary Flight Restrictions (TFRs). SUA data comes from FAA's ArcGIS Feature Service; TFR data comes from the FAA's TFR API and GeoServer. Zones are color-coded by type and rendered as polygon overlays with opacity indicating severity. TFRs use dashed strokes to distinguish them from permanent restrictions. No API key required.
 
-Additional planned data layers include conflict event mapping and seismic monitoring.
+**Conflict Event Tracking** — The conflict layer displays real-time global military and conflict events sourced from the [GDELT Project](https://www.gdeltproject.org/). Events are plotted as starburst markers color-coded by severity category (coercion, assault, armed conflict, mass violence). Each event links back to the source article for full context. Events are filtered by military/conflict keywords and displayed within a rolling 24-hour window. No API key required.
+
+Additional planned data layers include seismic monitoring.
 
 All aircraft data comes from **ADS-B (Automatic Dependent Surveillance-Broadcast)** — a technology where aircraft broadcast their GPS position, identity, and flight parameters on 1090 MHz. Volunteer-run ground receivers collect these signals and feed them to aggregators like ADSB.lol. This data is inherently public; it is broadcast unencrypted over open radio frequencies.
 
@@ -117,14 +119,17 @@ Position computation is done **client-side** using the `satellite.js` library (J
 | Foreign Military | Purple | COSMOS, SHIYAN, SHIJIAN |
 | Other Military | Light Purple | Unclassified military |
 
-### Layer 4: Conflict Events (Planned)
+### Layer 4: Conflict Events (Active)
 
 | Source | URL | Auth | Status |
 |---|---|---|---|
-| GDELT Project | `https://api.gdeltproject.org/api/v2/` | None | Primary candidate |
-| ACLED | `https://acleddata.com/` | Free registration | Backup |
+| GDELT Project | `https://api.gdeltproject.org/api/v2/geo/geo` | None | Active |
 
-**GDELT** provides real-time global event data as GeoJSON, including military/conflict events, with no authentication required. Events can be filtered by CAMEO codes related to military action.
+**GDELT GEO v2** provides real-time geocoded news events as GeoJSON. The proxy route fetches military/conflict events (up to 500 points within a 24-hour window), parses HTML source links, classifies events by severity using keyword analysis, and deduplicates by event ID. Server cache: 10 minutes with 5-minute stale fallback.
+
+**Conflict categories:** Coerce (orange), Assault (red), Fight (dark red), Mass Violence (deep red), Other (amber). Classification uses regex patterns matching CAMEO-style conflict terminology in event headlines.
+
+**Rendering:** 6-pointed starburst markers (18px, 24px when selected) with category-colored fill. Pane z-430, zoom gate at level 3+. Viewport filtered.
 
 ### Layer 5: Airspace Restrictions (Active)
 
@@ -197,8 +202,10 @@ overwatch/
 │   │       │   └── route.ts     # Serves cached vessel data from aisStreamManager
 │   │       ├── satellites/
 │   │       │   └── route.ts     # Proxy to CelesTrak GP endpoints (10 catalogs, 30-min cache)
-│   │       └── airspace/
-│   │           └── route.ts     # Proxy to FAA ArcGIS (SUA) + TFR API/GeoServer, merged response
+│   │       ├── airspace/
+│   │       │   └── route.ts     # Proxy to FAA ArcGIS (SUA) + TFR API/GeoServer, merged response
+│   │       └── conflicts/
+│   │           └── route.ts     # Proxy to GDELT GEO v2 API (10-min cache)
 │   ├── components/
 │   │   ├── Map.tsx              # Leaflet map with aircraft + vessel + satellite rendering (client, no SSR)
 │   │   ├── MapWrapper.tsx       # Dynamic import wrapper for Map (ssr: false)
@@ -214,12 +221,16 @@ overwatch/
 │   │   ├── AirspaceOverlay.tsx  # Airspace polygon overlay renderer (Leaflet L.polygon)
 │   │   ├── AirspacePanel.tsx    # Airspace zone detail panel (orange accent)
 │   │   ├── AirspaceFilterBar.tsx # Airspace type/TFR-type/active-only filters (orange accent)
-│   │   ├── LayerControl.tsx     # Floating layer toggle panel (aircraft/vessels/satellites/airspace)
+│   │   ├── ConflictMarker.tsx   # Conflict starburst marker with category colors
+│   │   ├── ConflictPanel.tsx    # Conflict event detail panel (red accent)
+│   │   ├── ConflictFilterBar.tsx # Conflict search + category + timeframe filters (red accent)
+│   │   ├── LayerControl.tsx     # Floating layer toggle panel (aircraft/vessels/satellites/airspace/conflicts)
 │   │   └── StatusBar.tsx        # Connection status + counts + satellite error indicator
 │   ├── hooks/
 │   │   ├── useAircraftData.ts   # Aircraft polling hook (10s interval)
 │   │   ├── useVesselData.ts     # Vessel polling hook (15s interval, toggleable)
-│   │   └── useSatelliteData.ts  # Satellite TLE fetch (30min) + SGP4 propagation (30s), toggleable
+│   │   ├── useSatelliteData.ts  # Satellite TLE fetch (30min) + SGP4 propagation (30s), toggleable
+│   │   └── useConflictData.ts   # Conflict polling hook (10min interval, toggleable)
 │   ├── lib/
 │   │   ├── api.ts               # Aircraft fetch wrapper
 │   │   ├── types.ts             # Aircraft TypeScript interfaces
@@ -230,7 +241,8 @@ overwatch/
 │   │   ├── vesselTypes.ts       # Vessel interfaces, MID lookup, military identification
 │   │   ├── aisStreamManager.ts  # Server-side WebSocket singleton for aisstream.io
 │   │   ├── satelliteTypes.ts    # Satellite interfaces, category classification, formatting
-│   │   └── satellitePropagator.ts # SGP4 propagation via satellite.js
+│   │   ├── satellitePropagator.ts # SGP4 propagation via satellite.js
+│   │   └── conflictTypes.ts    # Conflict interfaces, category classification, formatting
 │   └── styles/
 │       └── globals.css          # Tailwind directives
 └── public/
@@ -276,6 +288,19 @@ No API key needed — satellite tracking works out of the box.
 **Categories:** Reconnaissance, SIGINT/ELINT, Communications, Navigation (GPS/GLONASS/BeiDou/Galileo), Early Warning, Weather, Foreign Military, Other Military.
 
 **Data source:** [CelesTrak](https://celestrak.org/) — free, no authentication required. Derived from the US Space Command public satellite catalog.
+
+### Conflict Event Tracking
+
+No API key needed — conflict tracking works out of the box.
+
+1. Click the "Conflicts" toggle in the bottom-left layer control panel
+2. Events appear as colored starburst markers across the globe
+3. Click any event for details (headline, source article, severity, location)
+4. Use the red filter bar to search by name/domain, filter by category, or narrow by timeframe (24h/6h/1h)
+
+**Categories:** Coercion (orange), Assault (red), Armed Conflict (dark red), Mass Violence (deep red), Other (amber).
+
+**Data source:** [GDELT Project](https://www.gdeltproject.org/) — free, no authentication required. Real-time geocoded news events derived from open news sources worldwide.
 
 ## Environment Variables
 

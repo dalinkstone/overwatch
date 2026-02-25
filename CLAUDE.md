@@ -4,8 +4,8 @@ Real-time military movement intelligence dashboard. Next.js 16 App Router, TypeS
 
 ## Status
 
-**Active layers:** Aircraft (ADSB.lol), Vessels (aisstream.io), Satellites (CelesTrak), Airspace (FAA ArcGIS + FAA TFR API)
-**Planned layers:** Conflict events (GDELT), Seismic (USGS)
+**Active layers:** Aircraft (ADSB.lol), Vessels (aisstream.io), Satellites (CelesTrak), Airspace (FAA ArcGIS + FAA TFR API), Conflicts (GDELT)
+**Planned layers:** Seismic (USGS)
 
 All phases complete. Every file listed in the project structure below is implemented and working.
 
@@ -70,6 +70,7 @@ Managed in `page.tsx`, persisted to `localStorage`. Aircraft always on; vessels/
 | Vessels | `overwatch-vessel-layer` | off | 15s |
 | Satellites | `overwatch-satellite-layer` | off | TLE: 30min, positions: 30s |
 | Airspace | `overwatch-airspace-layer` | off | 5min |
+| Conflicts | `overwatch-conflict-layer` | off | 10min |
 
 ## Data Sources
 
@@ -132,11 +133,23 @@ Two sub-sources merged into one layer:
 
 **Active vs inactive:** `isZoneActive()` checks SUA schedule ("CONT" = active, "BY NOTAM" = inactive) and TFR effective time window. Default filter shows active-only (~330 zones); toggling off shows all ~1600 with inactive zones as outlines.
 
+### Conflicts — GDELT
+
+- **Endpoint:** `https://api.gdeltproject.org/api/v2/geo/geo?query=military+conflict&mode=pointdata&format=geojson&timespan=24h&maxpoints=500`
+- **No auth.** GDELT updates ~every 15 minutes. Server cache: 10min (+ 5min stale-while-revalidate fallback). Client poll: 10min.
+- **GeoJSON FeatureCollection** response with Point features.
+- **Key fields:** `name` (headline), `url` (source article), `domain` (source domain), `tone` (-10 to +10), `goldsteinscale` (-10 to +10, nullable), `sharingimage`, `numArticles`.
+- **Processing:** HTML anchor tag parsing, deduplication by ID (keeps highest article count), rejects [0,0] coordinates and ERROR-prefixed names.
+
+**Categories (5):** coerce (orange `#f97316`), assault (red `#ef4444`), fight (dark red `#dc2626`), mass-violence (deep red `#991b1b`), other (amber `#f59e0b`). Classified by keyword analysis (regex patterns matching CAMEO-style conflict terminology).
+
+**Markers:** 6-pointed starburst SVG with white center dot. Default 18px, selected 24px with glow circle. Category-colored fill, black stroke. Pane z-430. Zoom gate ≥ 3.
+
 ## Component Details
 
 ### Map.tsx
 
-Client component. Vanilla Leaflet (`L.map` + `L.tileLayer`). OSM tiles. Custom panes: airspace (z-420), satellites (z-440), vessels (z-450), aircraft (z-600 default marker pane). Viewport filtering via `moveend`/`zoomend` for vessels, satellites, and airspace zones. Zoom gates: airspace ≥ 4, vessels ≥ 4, satellites ≥ 3.
+Client component. Vanilla Leaflet (`L.map` + `L.tileLayer`). OSM tiles. Custom panes: airspace (z-420), conflicts (z-430), satellites (z-440), vessels (z-450), aircraft (z-600 default marker pane). Viewport filtering via `moveend`/`zoomend` for vessels, satellites, airspace zones, and conflicts. Zoom gates: airspace ≥ 4, conflicts ≥ 3, vessels ≥ 4, satellites ≥ 3.
 
 Attribution: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io | Satellite data: CelesTrak`
 
@@ -149,6 +162,7 @@ All are `React.memo`'d with custom comparators.
 | AircraftMarker | 30-44px by category | `track` | *(default memo)* |
 | VesselMarker | 28px military / 20px civilian | `heading` (fallback `cog`) | lat, lon, heading, cog, sog, lastUpdate |
 | SatelliteMarker | 20px GEO / 16px LEO/MEO | none | lat, lon, altitude, category |
+| ConflictMarker | 18px / 24px selected | none | lat, lon, category, name, isSelected |
 
 ### Panels
 
@@ -160,6 +174,7 @@ All use identical slide-in layout: right sidebar (320px) on desktop ≥768px, bo
 | VesselPanel | blue | name, MMSI, flag, military category, type, speed, course, heading, destination |
 | SatellitePanel | purple | name, NORAD ID, category, altitude, period, inclination, orbit type, velocity, intl designator, epoch |
 | AirspacePanel | orange | name, type badge, TFR sub-type, active status, altitude range, schedule/effective period, state, description, source |
+| ConflictPanel | red | event name, category badge, source link, tone, goldstein scale, article count, location, timestamp |
 
 ### Filter Bars
 
@@ -171,6 +186,7 @@ Each layer has its own filter bar below StatusBar when active. Different accent 
 | VesselFilterBar | blue | country, category, speed, destination search |
 | SatelliteFilterBar | purple | search (name/NORAD ID), category, orbit type |
 | AirspaceFilterBar | orange | type, TFR sub-type, active-only toggle |
+| ConflictFilterBar | red | search (name/domain), category, timeframe (24h/6h/1h) |
 
 ### Page Integration (page.tsx)
 
@@ -182,17 +198,13 @@ Each layer has its own filter bar below StatusBar when active. Different accent 
 
 ### StatusBar
 
-Fixed top. Dark zinc-900. Shows: brand, total/tracked aircraft count, vessel count (blue, when active), satellite count (purple, when active), satellite error (amber), airspace zone count (orange, when active), last updated time, connection status dot.
+Fixed top. Dark zinc-900. Shows: brand, total/tracked aircraft count, vessel count (blue, when active), satellite count (purple, when active), satellite error (amber), airspace zone count (orange, when active), conflict count (red, when active), last updated time, connection status dot.
 
 ### LayerControl
 
-Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot), vessel row (toggleable, blue), satellite row (toggleable, purple), airspace row (toggleable, orange). Disabled state for missing API key (vessels only).
+Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot), vessel row (toggleable, blue), satellite row (toggleable, purple), airspace row (toggleable, orange), conflict row (toggleable, red). Disabled state for missing API key (vessels only).
 
 ## Planned Layers
-
-### Conflicts (GDELT)
-- `https://api.gdeltproject.org/api/v2/geo/geo?query=military&mode=pointdata&format=geojson&timespan=24h`
-- No auth. Filter by CAMEO codes 17-20 (coerce, assault, fight, mass violence).
 
 ### Seismic (USGS)
 - `https://earthquake.usgs.gov/fdsnws/event/1/` — GeoJSON. No auth. Circle markers with magnitude sizing.
@@ -203,6 +215,7 @@ Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot),
 - Vessels: viewport filtered, zoom gate ≥ 4, supports 2000+ concurrent
 - Satellites: viewport filtered, zoom gate ≥ 3, client-side SGP4 (no server round-trip between TLE fetches)
 - Airspace: viewport filtered, zoom gate ≥ 4, ~330 active zones (up to ~1600 with inactive). Polygon overlays via `L.polygon()`.
+- Conflicts: viewport filtered, zoom gate ≥ 3, ~500 max events (GDELT maxpoints cap). Static markers, no animation overhead.
 - All markers `React.memo`'d. No historical positions stored — each poll replaces state entirely.
 
 ## Error Handling
@@ -214,6 +227,7 @@ Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot),
 - AIS WebSocket: auto-reconnect with exponential backoff (5s × 10, then 60s reset)
 - Satellite route: `partial: true` flag when some catalogs fail
 - Airspace route: `partial: true` when one source (SUA or TFR) fails; both use `Promise.allSettled`
+- Conflict route: degrades gracefully — returns stale cache (5min stale-while-revalidate) or empty array on upstream failure. `partial: true` flag when GDELT fetch fails
 
 ## Allowed Dependencies
 
@@ -250,3 +264,4 @@ Do not add others without explicit approval.
 | CelesTrak | Free, no auth |
 | FAA ArcGIS (SUA) | Free, no auth |
 | FAA TFR API/GeoServer | Free, no auth |
+| GDELT Project | Free, no auth |
