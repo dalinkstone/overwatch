@@ -133,17 +133,34 @@ Two sub-sources merged into one layer:
 
 **Active vs inactive:** `isZoneActive()` checks SUA schedule ("CONT" = active, "BY NOTAM" = inactive) and TFR effective time window. Default filter shows active-only (~330 zones); toggling off shows all ~1600 with inactive zones as outlines.
 
-### Conflicts — GDELT
+### Conflicts — GDELT (Dual-Fetch: GEO v2 + Events Export)
 
-- **Endpoint:** `https://api.gdeltproject.org/api/v2/geo/geo?query=military+conflict&mode=pointdata&format=geojson&timespan=24h&maxpoints=500`
-- **No auth.** GDELT updates ~every 15 minutes. Server cache: 10min (+ 5min stale-while-revalidate fallback). Client poll: 10min.
-- **GeoJSON FeatureCollection** response with Point features.
-- **Key fields:** `name` (headline), `url` (source article), `domain` (source domain), `tone` (-10 to +10), `goldsteinscale` (-10 to +10, nullable), `sharingimage`, `numArticles`.
-- **Processing:** HTML anchor tag parsing, deduplication by ID (keeps highest article count), rejects [0,0] coordinates and ERROR-prefixed names.
+Two data sources merged per poll cycle:
 
-**Categories (5):** coerce (orange `#f97316`), assault (red `#ef4444`), fight (dark red `#dc2626`), mass-violence (deep red `#991b1b`), other (amber `#f59e0b`). Classified by keyword analysis (regex patterns matching CAMEO-style conflict terminology).
+**Source 1 — GEO v2 (primary geolocation):**
+- **Endpoint:** `http://api.gdeltproject.org/api/v2/geo/geo?query=military+conflict&mode=PointData&format=GeoJSON&timespan=24h&maxpoints=500`
+- **No auth.** GeoJSON FeatureCollection with Point features. Server cache: 10min.
+- **Key fields:** `name` (headline), `url`, `domain`, `tone`, `goldsteinscale`, `sharingimage`, `numArticles`.
+- **Processing:** HTML anchor tag parsing, deduplication by ID, rejects [0,0] and ERROR-prefixed names.
 
-**Markers:** 6-pointed starburst SVG with white center dot. Default 18px, selected 24px with glow circle. Category-colored fill, black stroke. Pane z-430. Zoom gate ≥ 3.
+**Source 2 — Events Export (structured enrichment):**
+- **Discovery:** `http://data.gdeltproject.org/gdeltv2/lastupdate.txt` → latest `.export.CSV.zip` URL.
+- **Format:** Tab-separated CSV in zip. Columns include GlobalEventID, Actor1/2 names+types+countries, EventCode, EventRootCode, QuadClass, GoldsteinScale, NumMentions, NumSources, NumArticles, AvgTone, ActionGeo_Lat/Long/Type, DATEADDED, SOURCEURL.
+- **Filtering:** Only CAMEO root codes 17-20 (conflict events). Valid ActionGeo coordinates only.
+- **Server cache:** 15min (matches GDELT 15-min export cycle). Accumulated events store: module-level Map keyed by GlobalEventID, 24h TTL per event, pruned on each fetch.
+- **Zip parsing:** Manual zip local file header parsing with built-in `node:zlib` `inflateRaw()`. No external deps.
+
+**Merge strategy:** GEO v2 events are primary (reliable geolocation). For each, find nearest Events Export record within 0.5 degrees (~55km) by Manhattan distance. Matched events get enrichment (actors, CAMEO code, Goldstein, quad class, geo precision). Unmatched GEO v2 events keep keyword-based classification with `isEnriched: false`. Unmatched Export events with valid coordinates added as standalone enriched events.
+
+**Enrichment fields on `ConflictEventEnriched`:** `actor1`/`actor2` (name, countryCode, type, label), `cameoCode`, `cameoRootCode`, `cameoDescription`, `quadClass` (verbal/material conflict/cooperation), `geoPrecision` (country/state/city/landmark), `eventDate`, `numSources`, `numMentions`, `isEnriched`.
+
+**CAMEO codes (conflict-relevant):** 17x=Coerce, 18x=Assault, 19x=Fight, 20x=Mass Violence. Sub-codes (e.g., 195=Employ aerial weapons) mapped via `getCameoDescription()`.
+
+**Actor types:** GOV=government, MIL=military, REB=rebel, OPP=opposition, COP=police, SPY=intelligence, CVL=civilian, MED=media, IGO=igo, NGO=ngo.
+
+**Categories (5):** coerce (orange `#f97316`), assault (red `#ef4444`), fight (dark red `#dc2626`), mass-violence (deep red `#991b1b`), other (amber `#f59e0b`). Enriched events use CAMEO root code directly; unenriched fall back to keyword regex.
+
+**Markers:** 6-pointed starburst SVG with white center dot. Enriched events get thin white outer ring. Size by source count: >=10 sources → 22px, >=5 → 20px, default 18px, selected 24px. Category-colored fill, black stroke. Pane z-430. Zoom gate >= 3.
 
 ## Component Details
 
@@ -162,7 +179,7 @@ All are `React.memo`'d with custom comparators.
 | AircraftMarker | 30-44px by category | `track` | *(default memo)* |
 | VesselMarker | 28px military / 20px civilian | `heading` (fallback `cog`) | lat, lon, heading, cog, sog, lastUpdate |
 | SatelliteMarker | 20px GEO / 16px LEO/MEO | none | lat, lon, altitude, category |
-| ConflictMarker | 18px / 24px selected | none | lat, lon, category, name, isSelected |
+| ConflictMarker | 18-22px / 24px selected | none | lat, lon, category, name, isEnriched, numSources, isSelected |
 
 ### Panels
 
@@ -174,7 +191,7 @@ All use identical slide-in layout: right sidebar (320px) on desktop ≥768px, bo
 | VesselPanel | blue | name, MMSI, flag, military category, type, speed, course, heading, destination |
 | SatellitePanel | purple | name, NORAD ID, category, altitude, period, inclination, orbit type, velocity, intl designator, epoch |
 | AirspacePanel | orange | name, type badge, TFR sub-type, active status, altitude range, schedule/effective period, state, description, source |
-| ConflictPanel | red | event name, category badge, source link, tone, goldstein scale, article count, location, timestamp |
+| ConflictPanel | red | event name, category badge, enrichment indicator, actors (type badges + names + countries), CAMEO code + description, quad class badge, source link, tone, goldstein scale (with bar for enriched), article count, sources/mentions, geo precision, location, timestamp, event date |
 
 ### Filter Bars
 
@@ -186,7 +203,7 @@ Each layer has its own filter bar below StatusBar when active. Different accent 
 | VesselFilterBar | blue | country, category, speed, destination search |
 | SatelliteFilterBar | purple | search (name/NORAD ID), category, orbit type |
 | AirspaceFilterBar | orange | type, TFR sub-type, active-only toggle |
-| ConflictFilterBar | red | search (name/domain), category, timeframe (24h/6h/1h) |
+| ConflictFilterBar | red | search (name/domain), category, timeframe (24h/6h/1h), verified/enriched toggle, actor type (multi-select: Military/Government/Rebel/Civilian/Police/Other), quad class (All/Material/Verbal) |
 
 ### Page Integration (page.tsx)
 
@@ -198,7 +215,7 @@ Each layer has its own filter bar below StatusBar when active. Different accent 
 
 ### StatusBar
 
-Fixed top. Dark zinc-900. Shows: brand, total/tracked aircraft count, vessel count (blue, when active), satellite count (purple, when active), satellite error (amber), airspace zone count (orange, when active), conflict count (red, when active), last updated time, connection status dot.
+Fixed top. Dark zinc-900. Shows: brand, total/tracked aircraft count, vessel count (blue, when active), satellite count (purple, when active), satellite error (amber), airspace zone count (orange, when active), conflict count (red, when active) with enrichment ratio (green, when >0 enriched), last updated time, connection status dot.
 
 ### LayerControl
 
@@ -227,7 +244,7 @@ Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot),
 - AIS WebSocket: auto-reconnect with exponential backoff (5s × 10, then 60s reset)
 - Satellite route: `partial: true` flag when some catalogs fail
 - Airspace route: `partial: true` when one source (SUA or TFR) fails; both use `Promise.allSettled`
-- Conflict route: degrades gracefully — returns stale cache (5min stale-while-revalidate) or empty array on upstream failure. `partial: true` flag when GDELT fetch fails
+- Conflict route: dual-fetch degradation. GEO v2 failure uses stale cache; Events Export failure returns GEO-only events with `isEnriched: false`. Zip decompression failure same degradation. TSV parse errors skip individual rows. Both set `partial: true`. Empty export is not an error — uses accumulated events.
 
 ## Allowed Dependencies
 

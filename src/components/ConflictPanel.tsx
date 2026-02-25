@@ -1,17 +1,20 @@
 "use client";
 
 import {
-  ConflictEvent,
+  ConflictEventEnriched,
   getConflictCategoryColor,
   getConflictCategoryLabel,
   formatTone,
   formatGoldstein,
+  getActorTypeLabel,
+  getGeoPrecisionLabel,
+  QUAD_CLASS_LABELS,
 } from "@/lib/conflictTypes";
 
 interface ConflictPanelProps {
-  event: ConflictEvent | null;
+  event: ConflictEventEnriched | null;
   onClose: () => void;
-  allEvents: ConflictEvent[];
+  allEvents: ConflictEventEnriched[];
 }
 
 /** Format a Date as relative time (e.g. "3 hours ago"). */
@@ -65,6 +68,36 @@ const getGoldsteinColorClass = (value: number): string => {
   return "text-green-400";
 };
 
+/** Get color for Goldstein bar visualization. */
+const getGoldsteinBarColor = (value: number): string => {
+  if (value < -5) return "bg-red-500";
+  if (value < -1) return "bg-red-400";
+  if (value < 1) return "bg-zinc-400";
+  if (value < 5) return "bg-green-400";
+  return "bg-green-500";
+};
+
+/** Get Tailwind color class for quad class badge. */
+const getQuadClassColor = (qc: string): string => {
+  if (qc === "material-conflict") return "bg-red-600 text-white";
+  if (qc === "verbal-conflict") return "bg-orange-600 text-white";
+  if (qc === "material-cooperation") return "bg-green-600 text-white";
+  return "bg-green-500 text-white";
+};
+
+/** Get Tailwind color class for actor type badge. */
+const getActorTypeBadgeClass = (type: string): string => {
+  switch (type) {
+    case "military": return "bg-red-800/60 text-red-200";
+    case "government": return "bg-blue-800/60 text-blue-200";
+    case "rebel": return "bg-orange-800/60 text-orange-200";
+    case "civilian": return "bg-zinc-700 text-zinc-200";
+    case "police": return "bg-yellow-800/60 text-yellow-200";
+    case "intelligence": return "bg-purple-800/60 text-purple-200";
+    default: return "bg-zinc-700 text-zinc-300";
+  }
+};
+
 export const ConflictPanel = ({
   event,
   onClose,
@@ -76,7 +109,6 @@ export const ConflictPanel = ({
   const categoryColor = event ? getConflictCategoryColor(event.category) : "";
   const categoryLabel = event ? getConflictCategoryLabel(event.category) : "";
 
-  // Determine badge text color: white for dark backgrounds, dark for lighter ones
   const badgeTextClass =
     event?.category === "other" ? "text-zinc-900" : "text-white";
 
@@ -110,8 +142,8 @@ export const ConflictPanel = ({
             </button>
           </div>
 
-          {/* Category badge */}
-          <div className="mb-3">
+          {/* Category badge + enrichment indicator */}
+          <div className="mb-3 flex items-center gap-2 flex-wrap">
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${badgeTextClass}`}
               style={{ backgroundColor: categoryColor }}
@@ -121,6 +153,16 @@ export const ConflictPanel = ({
               />
               {categoryLabel}
             </span>
+            {event.isEnriched ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-900/50 px-2 py-0.5 text-[10px] font-medium text-green-300 ring-1 ring-green-700/50">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-400" />
+                Enriched
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400 ring-1 ring-zinc-700">
+                Media report only
+              </span>
+            )}
           </div>
 
           {/* Event expired badge */}
@@ -132,6 +174,86 @@ export const ConflictPanel = ({
           )}
 
           <div className="border-b border-zinc-700" />
+
+          {/* Actors section (enriched only) */}
+          {(event.actor1 || event.actor2) && (
+            <>
+              <div className="mb-3 mt-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-red-400">
+                  Actors
+                </div>
+                <div className="space-y-2">
+                  {event.actor1 ? (
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${getActorTypeBadgeClass(event.actor1.type)}`}>
+                        {getActorTypeLabel(event.actor1.type)}
+                      </span>
+                      <span className="text-sm text-zinc-200 truncate">
+                        {event.actor1.name}
+                        {event.actor1.countryCode && (
+                          <span className="ml-1 text-zinc-500">({event.actor1.countryCode})</span>
+                        )}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-zinc-500 italic">Source unknown</div>
+                  )}
+
+                  <div className="flex items-center gap-2 pl-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-zinc-500">
+                      <path fillRule="evenodd" d="M2 8a.75.75 0 0 1 .75-.75h8.69L8.22 4.03a.75.75 0 0 1 1.06-1.06l4.5 4.5a.75.75 0 0 1 0 1.06l-4.5 4.5a.75.75 0 0 1-1.06-1.06l3.22-3.22H2.75A.75.75 0 0 1 2 8Z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+
+                  {event.actor2 ? (
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${getActorTypeBadgeClass(event.actor2.type)}`}>
+                        {getActorTypeLabel(event.actor2.type)}
+                      </span>
+                      <span className="text-sm text-zinc-200 truncate">
+                        {event.actor2.name}
+                        {event.actor2.countryCode && (
+                          <span className="ml-1 text-zinc-500">({event.actor2.countryCode})</span>
+                        )}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-zinc-500 italic">Target unknown</div>
+                  )}
+                </div>
+              </div>
+              <div className="border-b border-zinc-700" />
+            </>
+          )}
+
+          {/* Event Classification section (enriched only) */}
+          {event.cameoCode && (
+            <>
+              <div className="mb-3 mt-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-red-400">
+                  Classification
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="inline-flex shrink-0 items-center rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] font-medium text-zinc-300 ring-1 ring-zinc-700">
+                      {event.cameoCode}
+                    </span>
+                    <span className="text-sm text-zinc-200">
+                      {event.cameoDescription}
+                    </span>
+                  </div>
+                  {event.quadClass && (
+                    <div>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${getQuadClassColor(event.quadClass)}`}>
+                        {QUAD_CLASS_LABELS[event.quadClass]}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="border-b border-zinc-700" />
+            </>
+          )}
 
           {/* Source section */}
           <div className="mb-3 mt-3">
@@ -202,16 +324,37 @@ export const ConflictPanel = ({
                 </span>
               </div>
               {event.goldsteinScale !== null && (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-zinc-400">Goldstein Scale</span>
-                  <span className="text-right">
-                    <span
-                      className={`font-mono text-sm ${getGoldsteinColorClass(event.goldsteinScale)}`}
-                    >
-                      {formatGoldstein(event.goldsteinScale)}
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-zinc-400">Goldstein Scale</span>
+                    <span className="text-right">
+                      <span
+                        className={`font-mono text-sm ${getGoldsteinColorClass(event.goldsteinScale)}`}
+                      >
+                        {formatGoldstein(event.goldsteinScale)}
+                      </span>
                     </span>
-                  </span>
-                </div>
+                  </div>
+                  {event.isEnriched && (
+                    <div className="px-1">
+                      <div className="relative h-2 w-full rounded-full bg-zinc-700">
+                        <div
+                          className={`absolute top-0 h-2 rounded-full ${getGoldsteinBarColor(event.goldsteinScale)}`}
+                          style={{
+                            left: "0%",
+                            width: `${((event.goldsteinScale + 10) / 20) * 100}%`,
+                          }}
+                        />
+                        <div className="absolute top-0 left-1/2 h-2 w-px bg-zinc-500" />
+                      </div>
+                      <div className="mt-0.5 flex justify-between text-[9px] text-zinc-600">
+                        <span>-10</span>
+                        <span>0</span>
+                        <span>+10</span>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-zinc-400">Sources</span>
@@ -219,6 +362,14 @@ export const ConflictPanel = ({
                   Covered by {event.numArticles} article{event.numArticles === 1 ? "" : "s"}
                 </span>
               </div>
+              {event.isEnriched && (event.numSources > 0 || event.numMentions > 0) && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-zinc-400">Reach</span>
+                  <span className="text-sm text-zinc-300">
+                    {event.numSources} source{event.numSources === 1 ? "" : "s"}, {event.numMentions} mention{event.numMentions === 1 ? "" : "s"}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -232,6 +383,14 @@ export const ConflictPanel = ({
             <div className="space-y-3">
               <DetailRow label="Latitude" value={event.lat.toFixed(4)} />
               <DetailRow label="Longitude" value={event.lon.toFixed(4)} />
+              {event.isEnriched && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-zinc-400">Precision</span>
+                  <span className="text-sm text-zinc-200">
+                    {getGeoPrecisionLabel(event.geoPrecision)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -251,6 +410,12 @@ export const ConflictPanel = ({
                 label="Date"
                 value={formatAbsoluteTime(event.dateAdded)}
               />
+              {event.eventDate && event.eventDate !== event.dateAdded && (
+                <DetailRow
+                  label="Event Date"
+                  value={formatAbsoluteTime(event.eventDate)}
+                />
+              )}
             </div>
           </div>
         </div>

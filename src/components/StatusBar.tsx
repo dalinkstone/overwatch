@@ -14,6 +14,7 @@ interface StatusBarProps {
   airspaceCount?: number;
   conflictsEnabled?: boolean;
   conflictCount?: number;
+  conflictEnrichedCount?: number;
 }
 
 const formatTime = (date: Date): string => {
@@ -39,6 +40,7 @@ export const StatusBar = ({
   airspaceCount,
   conflictsEnabled,
   conflictCount,
+  conflictEnrichedCount,
 }: StatusBarProps) => {
   return (
     <div className="flex items-center justify-between bg-zinc-900 px-4 py-2.5 text-xs text-white">
@@ -113,6 +115,9 @@ export const StatusBar = ({
             <span>
               <span className="text-zinc-500">Conflicts:</span>{" "}
               <span className="font-mono text-red-400">{conflictCount.toLocaleString()}</span>
+              {conflictEnrichedCount !== undefined && conflictEnrichedCount > 0 && (
+                <span className="ml-1 font-mono text-green-400">({conflictEnrichedCount} enriched)</span>
+              )}
             </span>
           </>
         )}

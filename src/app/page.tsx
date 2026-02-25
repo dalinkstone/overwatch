@@ -23,7 +23,7 @@ import { AircraftState } from "@/lib/types";
 import { VesselData, VesselCategory, getVesselCategory } from "@/lib/vesselTypes";
 import { SatellitePosition, SatelliteCategory } from "@/lib/satelliteTypes";
 import { AirspaceType, TfrType, AirspaceZone } from "@/lib/airspaceTypes";
-import { ConflictEvent, ConflictCategory, ConflictFilters } from "@/lib/conflictTypes";
+import { ConflictEventEnriched, ConflictCategory, ConflictActorType, ConflictFilters } from "@/lib/conflictTypes";
 import { AircraftCategory, getAircraftCategory } from "@/lib/aircraftIcons";
 import { getCountryFromHex } from "@/lib/countryLookup";
 
@@ -204,6 +204,9 @@ export default function Home() {
         search: '',
         categories: new Set<ConflictCategory>(['coerce', 'assault', 'fight', 'mass-violence', 'other']),
         timeframe: '24h' as const,
+        enrichedOnly: false,
+        actorTypes: new Set<ConflictActorType>(),
+        quadClass: null,
       });
     }
   }, []);
@@ -225,7 +228,7 @@ export default function Home() {
   const [airspaceSignalLost, setAirspaceSignalLost] = useState(false);
   const selectedAirspaceIdRef = useRef<string | null>(null);
 
-  const [selectedConflict, setSelectedConflict] = useState<ConflictEvent | null>(null);
+  const [selectedConflict, setSelectedConflict] = useState<ConflictEventEnriched | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [altitudeFilter, setAltitudeFilter] = useState("all");
@@ -251,6 +254,9 @@ export default function Home() {
     search: '',
     categories: new Set<ConflictCategory>(['coerce', 'assault', 'fight', 'mass-violence', 'other']),
     timeframe: '24h' as const,
+    enrichedOnly: false,
+    actorTypes: new Set<ConflictActorType>(),
+    quadClass: null,
   });
 
   const filteredAircraft = useMemo(() => {
@@ -371,8 +377,31 @@ export default function Home() {
       filtered = filtered.filter(e => now - new Date(e.dateAdded).getTime() < cutoff);
     }
 
+    // Enriched-only filter
+    if (conflictFilters.enrichedOnly) {
+      filtered = filtered.filter(e => e.isEnriched);
+    }
+
+    // Actor type filter
+    if (conflictFilters.actorTypes.size > 0) {
+      filtered = filtered.filter(e =>
+        (e.actor1 && conflictFilters.actorTypes.has(e.actor1.type)) ||
+        (e.actor2 && conflictFilters.actorTypes.has(e.actor2.type))
+      );
+    }
+
+    // Quad class filter
+    if (conflictFilters.quadClass) {
+      filtered = filtered.filter(e => e.quadClass === conflictFilters.quadClass);
+    }
+
     return filtered;
   }, [conflictEvents, conflictFilters]);
+
+  const conflictEnrichedCount = useMemo(
+    () => conflictEvents.filter(e => e.isEnriched).length,
+    [conflictEvents],
+  );
 
   const aircraftCountries = useMemo(() => {
     const countrySet = new Set<string>();
@@ -487,7 +516,7 @@ export default function Home() {
     selectedAirspaceIdRef.current = null;
   }, []);
 
-  const handleConflictClick = useCallback((event: ConflictEvent | null) => {
+  const handleConflictClick = useCallback((event: ConflictEventEnriched | null) => {
     setSelectedConflict(event);
     if (!event) return;
     // Close other panels (mutual exclusivity)
@@ -578,6 +607,7 @@ export default function Home() {
         airspaceCount={filteredAirspaces.length}
         conflictsEnabled={conflictsEnabled}
         conflictCount={filteredConflicts.length}
+        conflictEnrichedCount={conflictEnrichedCount}
       />
       <FilterBar
         searchQuery={searchQuery}
@@ -641,8 +671,15 @@ export default function Home() {
           onCategoriesChange={(categories) => setConflictFilters(prev => ({ ...prev, categories }))}
           timeframe={conflictFilters.timeframe}
           onTimeframeChange={(timeframe) => setConflictFilters(prev => ({ ...prev, timeframe }))}
+          enrichedOnly={conflictFilters.enrichedOnly}
+          onEnrichedOnlyChange={(enrichedOnly) => setConflictFilters(prev => ({ ...prev, enrichedOnly }))}
+          actorTypes={conflictFilters.actorTypes}
+          onActorTypesChange={(actorTypes) => setConflictFilters(prev => ({ ...prev, actorTypes }))}
+          quadClass={conflictFilters.quadClass}
+          onQuadClassChange={(quadClass) => setConflictFilters(prev => ({ ...prev, quadClass }))}
           totalCount={conflictEvents.length}
           filteredCount={filteredConflicts.length}
+          enrichedCount={conflictEnrichedCount}
         />
       )}
       {/* Error banner — non-blocking, shows below filter bar */}

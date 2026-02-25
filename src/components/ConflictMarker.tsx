@@ -2,23 +2,31 @@
 
 import { memo, useEffect, useRef } from "react";
 import L from "leaflet";
-import { ConflictEvent, getConflictCategoryColor } from "@/lib/conflictTypes";
+import { ConflictEventEnriched, getConflictCategoryColor } from "@/lib/conflictTypes";
 
 interface ConflictMarkerProps {
-  event: ConflictEvent;
+  event: ConflictEventEnriched;
   isSelected: boolean;
   onClick: () => void;
   map: L.Map;
   pane: string;
 }
 
+/** Determine marker size based on enrichment and source count. */
+const getMarkerSize = (event: ConflictEventEnriched, isSelected: boolean): number => {
+  if (isSelected) return 24;
+  if (event.isEnriched && event.numSources >= 10) return 22;
+  if (event.isEnriched && event.numSources >= 5) return 20;
+  return 18;
+};
+
 const createConflictIcon = (
-  event: ConflictEvent,
+  event: ConflictEventEnriched,
   isSelected: boolean,
   pane: string,
 ): L.DivIcon => {
   const color = getConflictCategoryColor(event.category);
-  const size = isSelected ? 24 : 18;
+  const size = getMarkerSize(event, isSelected);
   const center = size / 2;
 
   // 6-pointed starburst: alternating outer/inner points around center
@@ -36,8 +44,14 @@ const createConflictIcon = (
     ? `<circle cx="${center}" cy="${center}" r="${center}" fill="${color}" opacity="0.25"/>`
     : "";
 
+  // Enriched events get a thin white outer ring
+  const enrichedRing = event.isEnriched && !isSelected
+    ? `<circle cx="${center}" cy="${center}" r="${center - 0.5}" fill="none" stroke="#fff" stroke-width="1" opacity="0.5"/>`
+    : "";
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
     ${glow}
+    ${enrichedRing}
     <polygon points="${starPath}" fill="${color}" stroke="#000" stroke-width="0.8" opacity="0.9"/>
     <circle cx="${center}" cy="${center}" r="2" fill="#fff" opacity="0.9"/>
   </svg>`;
@@ -97,6 +111,8 @@ export const ConflictMarker = memo(ConflictMarkerComponent, (prev, next) => {
     prev.event.lon === next.event.lon &&
     prev.event.category === next.event.category &&
     prev.event.name === next.event.name &&
+    prev.event.isEnriched === next.event.isEnriched &&
+    prev.event.numSources === next.event.numSources &&
     prev.isSelected === next.isSelected
   );
 });

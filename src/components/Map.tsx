@@ -7,7 +7,7 @@ import { AircraftState, hasPosition } from "@/lib/types";
 import { VesselData } from "@/lib/vesselTypes";
 import { SatellitePosition } from "@/lib/satelliteTypes";
 import { AirspaceZone } from "@/lib/airspaceTypes";
-import { ConflictEvent } from "@/lib/conflictTypes";
+import { ConflictEventEnriched } from "@/lib/conflictTypes";
 import { AircraftMarker } from "./AircraftMarker";
 import { VesselMarker } from "./VesselMarker";
 import { SatelliteMarker } from "./SatelliteMarker";
@@ -26,9 +26,9 @@ interface MapProps {
   selectedAirspaceZoneId?: string | null;
   onAirspaceZoneClick?: (zone: AirspaceZone) => void;
   airspaceLayerEnabled?: boolean;
-  conflicts?: ConflictEvent[];
-  selectedConflict?: ConflictEvent | null;
-  onConflictSelect?: (event: ConflictEvent | null) => void;
+  conflicts?: ConflictEventEnriched[];
+  selectedConflict?: ConflictEventEnriched | null;
+  onConflictSelect?: (event: ConflictEventEnriched | null) => void;
   conflictsEnabled?: boolean;
 }
 

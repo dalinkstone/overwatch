@@ -2,7 +2,10 @@
 
 import {
   ConflictCategory,
+  ConflictActorType,
+  QuadClass,
   CONFLICT_CATEGORIES,
+  CONFLICT_ACTOR_TYPES,
   getConflictCategoryLabel,
   getConflictCategoryColor,
 } from "@/lib/conflictTypes";
@@ -14,14 +17,27 @@ interface ConflictFilterBarProps {
   onCategoriesChange: (categories: Set<ConflictCategory>) => void;
   timeframe: "24h" | "6h" | "1h";
   onTimeframeChange: (timeframe: "24h" | "6h" | "1h") => void;
+  enrichedOnly: boolean;
+  onEnrichedOnlyChange: (value: boolean) => void;
+  actorTypes: Set<ConflictActorType>;
+  onActorTypesChange: (types: Set<ConflictActorType>) => void;
+  quadClass: QuadClass | null;
+  onQuadClassChange: (qc: QuadClass | null) => void;
   totalCount: number;
   filteredCount: number;
+  enrichedCount: number;
 }
 
 const TIMEFRAME_OPTIONS: { value: "24h" | "6h" | "1h"; label: string }[] = [
   { value: "24h", label: "24h" },
   { value: "6h", label: "6h" },
   { value: "1h", label: "1h" },
+];
+
+const QUAD_CLASS_OPTIONS: { value: QuadClass | null; label: string }[] = [
+  { value: null, label: "All" },
+  { value: "material-conflict", label: "Material" },
+  { value: "verbal-conflict", label: "Verbal" },
 ];
 
 export const ConflictFilterBar = ({
@@ -31,13 +47,19 @@ export const ConflictFilterBar = ({
   onCategoriesChange,
   timeframe,
   onTimeframeChange,
+  enrichedOnly,
+  onEnrichedOnlyChange,
+  actorTypes,
+  onActorTypesChange,
+  quadClass,
+  onQuadClassChange,
   totalCount,
   filteredCount,
+  enrichedCount,
 }: ConflictFilterBarProps) => {
   const toggleCategory = (cat: ConflictCategory) => {
     const next = new Set(categories);
     if (next.has(cat)) {
-      // Prevent deselecting the last category
       if (next.size > 1) {
         next.delete(cat);
       }
@@ -45,6 +67,16 @@ export const ConflictFilterBar = ({
       next.add(cat);
     }
     onCategoriesChange(next);
+  };
+
+  const toggleActorType = (type: ConflictActorType) => {
+    const next = new Set(actorTypes);
+    if (next.has(type)) {
+      next.delete(type);
+    } else {
+      next.add(type);
+    }
+    onActorTypesChange(next);
   };
 
   return (
@@ -157,6 +189,71 @@ export const ConflictFilterBar = ({
           </button>
         ))}
       </div>
+
+      <span className="hidden text-zinc-600 md:inline">|</span>
+
+      {/* Enriched-only toggle */}
+      <button
+        onClick={() => onEnrichedOnlyChange(!enrichedOnly)}
+        className={`flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium transition-colors ${
+          enrichedOnly
+            ? "bg-green-700 text-white"
+            : "bg-zinc-800 text-zinc-300 ring-1 ring-zinc-700 hover:bg-zinc-700"
+        }`}
+      >
+        <span className={`inline-block h-1.5 w-1.5 rounded-full ${enrichedOnly ? "bg-green-300" : "bg-zinc-500"}`} />
+        Verified
+      </button>
+
+      {/* Actor type pills (only when enriched events exist) */}
+      {enrichedCount > 0 && (
+        <>
+          <span className="hidden text-zinc-600 md:inline">|</span>
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {CONFLICT_ACTOR_TYPES.map((at) => {
+              const active = actorTypes.has(at.value);
+              return (
+                <button
+                  key={at.value}
+                  onClick={() => toggleActorType(at.value)}
+                  className={`flex h-6 shrink-0 items-center rounded-full px-2.5 text-[11px] font-medium transition-colors ${
+                    active
+                      ? "bg-red-600 text-white"
+                      : "bg-zinc-800 text-zinc-300 ring-1 ring-zinc-700 hover:bg-zinc-700"
+                  }`}
+                >
+                  {at.label}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Quad class pills (only when enriched events exist) */}
+      {enrichedCount > 0 && (
+        <>
+          <span className="hidden text-zinc-600 md:inline">|</span>
+          <div className="flex items-center gap-1">
+            {QUAD_CLASS_OPTIONS.map((opt) => {
+              const active = quadClass === opt.value;
+              return (
+                <button
+                  key={opt.label}
+                  onClick={() => onQuadClassChange(opt.value)}
+                  className={`flex h-6 shrink-0 items-center rounded-full px-2.5 text-[11px] font-medium transition-colors ${
+                    active
+                      ? "bg-red-600 text-white"
+                      : "bg-zinc-800 text-zinc-300 ring-1 ring-zinc-700 hover:bg-zinc-700"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {/* Event count */}
       <div className="hidden text-zinc-400 md:ml-auto md:block">

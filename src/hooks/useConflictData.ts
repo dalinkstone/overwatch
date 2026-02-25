@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ConflictEvent, ConflictApiResponse } from "@/lib/conflictTypes";
+import { ConflictEventEnriched, ConflictApiResponse } from "@/lib/conflictTypes";
 
 const CONFLICT_POLL_INTERVAL_MS = 600000; // 10 minutes
 
 interface UseConflictDataReturn {
-  events: ConflictEvent[];
+  events: ConflictEventEnriched[];
   total: number;
   loading: boolean;
   error: string | null;
@@ -12,7 +12,7 @@ interface UseConflictDataReturn {
 }
 
 export const useConflictData = (enabled: boolean): UseConflictDataReturn => {
-  const [events, setEvents] = useState<ConflictEvent[]>([]);
+  const [events, setEvents] = useState<ConflictEventEnriched[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
