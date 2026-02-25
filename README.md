@@ -1,10 +1,10 @@
 # Overwatch — Open Source Military Movement Tracker
 
-A real-time military movement intelligence dashboard built with TypeScript, using publicly available data sources and an interactive map interface. Track military aircraft and naval vessels worldwide — all from open, free data.
+A real-time military movement intelligence dashboard built with TypeScript, using publicly available data sources and an interactive map interface. Track military aircraft, naval vessels, satellites, airspace restrictions, and conflict events worldwide — all from open, free data.
 
 ## What It Does
 
-Overwatch aggregates multiple publicly available data sources to create a comprehensive picture of military movement worldwide.
+Overwatch aggregates multiple publicly available data sources to create a comprehensive picture of military movement and global conflict worldwide.
 
 **Aircraft Tracking** — The primary layer polls the [ADSB.lol](https://www.adsb.lol/) public API for aircraft flagged as military, then renders their positions, headings, altitudes, and callsigns on a live Leaflet.js map with aircraft-type-specific silhouette icons. Users can click any aircraft to see details (type, registration, speed, altitude, squawk code, country of registration) and filter by search, altitude band, or aircraft category.
 
@@ -14,9 +14,9 @@ Overwatch aggregates multiple publicly available data sources to create a compre
 
 **Airspace Restriction Tracking** — The airspace layer overlays restricted airspace zones on the map, including FAA Special Use Airspace (Restricted Areas, Prohibited Areas, MOAs, Warning Areas, Alert Areas) and active Temporary Flight Restrictions (TFRs). SUA data comes from FAA's ArcGIS Feature Service; TFR data comes from the FAA's TFR API and GeoServer. Zones are color-coded by type and rendered as polygon overlays with opacity indicating severity. TFRs use dashed strokes to distinguish them from permanent restrictions. No API key required.
 
-**Conflict Event Tracking** — The conflict layer displays real-time global military and conflict events sourced from the [GDELT Project](https://www.gdeltproject.org/). Events are plotted as starburst markers color-coded by severity category (coercion, assault, armed conflict, mass violence). Each event links back to the source article for full context. Events are filtered by military/conflict keywords and displayed within a rolling 24-hour window. No API key required.
+**Conflict Event Tracking** — The conflict layer displays real-time global military and conflict events sourced from the [GDELT Project](https://www.gdeltproject.org/). The layer pulls from both GDELT's GEO v2 API (geocoded news media) and the GDELT Events 2.0 database (structured event records with CAMEO codes, actor identification, and Goldstein conflict-cooperation scores). Events are plotted as starburst markers color-coded by severity category. Each event includes actor identification, event classification, source articles, and conflict intensity metrics. Events are displayed within a rolling 24-hour window. No API key required.
 
-Additional planned data layers include seismic monitoring.
+**Humanitarian Context** — Overwatch integrates humanitarian crisis data from the [ReliefWeb API](https://reliefweb.int/help/api) (UN OCHA) to provide strategic context alongside tactical movement data. Active humanitarian crises, disaster declarations, and situation reports are surfaced as a country/region-level overlay, connecting the dots between military movements, conflict events, and their human consequences — displacement figures, food insecurity, and civilian impact. No API key required.
 
 All aircraft data comes from **ADS-B (Automatic Dependent Surveillance-Broadcast)** — a technology where aircraft broadcast their GPS position, identity, and flight parameters on 1090 MHz. Volunteer-run ground receivers collect these signals and feed them to aggregators like ADSB.lol. This data is inherently public; it is broadcast unencrypted over open radio frequencies.
 
@@ -123,11 +123,14 @@ Position computation is done **client-side** using the `satellite.js` library (J
 
 | Source | URL | Auth | Status |
 |---|---|---|---|
-| GDELT Project | `https://api.gdeltproject.org/api/v2/geo/geo` | None | Active |
+| GDELT GEO v2 | `https://api.gdeltproject.org/api/v2/geo/geo` | None | Active |
+| GDELT Events 2.0 | `https://api.gdeltproject.org/api/v2/doc/doc` | None | Planned |
 
 **GDELT GEO v2** provides real-time geocoded news events as GeoJSON. The proxy route fetches military/conflict events (up to 500 points within a 24-hour window), parses HTML source links, classifies events by severity using keyword analysis, and deduplicates by event ID. Server cache: 10 minutes with 5-minute stale fallback.
 
-**Conflict categories:** Coerce (orange), Assault (red), Fight (dark red), Mass Violence (deep red), Other (amber). Classification uses regex patterns matching CAMEO-style conflict terminology in event headlines.
+**GDELT Events 2.0** (planned enrichment) will supplement the GEO layer with structured event records including CAMEO event codes, Actor1/Actor2 identification with country codes, Goldstein conflict-cooperation scale on every event, and event type taxonomy. This transforms the layer from media-monitoring into structured conflict intelligence with actor attribution and event classification.
+
+**Conflict categories:** Coerce (orange), Assault (red), Fight (dark red), Mass Violence (deep red), Other (amber). Classification uses CAMEO root codes 17-20 when available, with regex keyword fallback for GEO v2 events.
 
 **Rendering:** 6-pointed starburst markers (18px, 24px when selected) with category-colored fill. Pane z-430, zoom gate at level 3+. Viewport filtered.
 
@@ -147,13 +150,23 @@ Position computation is done **client-side** using the `satellite.js` library (J
 
 **Rendering:** Polygon overlays with severity-based opacity. Inactive "BY NOTAM" zones shown as outlines only. Zoom gate at level 4+.
 
-### Layer 6: Seismic Monitoring (Planned)
+### Layer 6: Humanitarian Context (Planned)
 
 | Source | URL | Auth | Status |
 |---|---|---|---|
-| USGS Earthquake API | `https://earthquake.usgs.gov/fdsnws/event/1/` | None | Primary |
+| ReliefWeb API | `https://api.reliefweb.int/v1/` | None (appname param only) | Planned |
+| HDX (Humanitarian Data Exchange) | `https://data.humdata.org/` | None | Planned |
 
-Real-time seismic data as GeoJSON. Supplementary awareness layer — large seismic events at known test sites can indicate nuclear testing.
+**ReliefWeb** is the United Nations Office for the Coordination of Humanitarian Affairs (OCHA) information service. The API provides free, no-auth access to humanitarian situation reports, disaster declarations, crisis updates, and country-level humanitarian indicators. Data is curated by OCHA editorial staff from 4,000+ trusted sources.
+
+**Planned integration:** Country/region-level crisis overlay showing active humanitarian emergencies, displacement figures, food insecurity classifications, and civilian impact data. Unlike the point-marker layers, this will render as choropleth shading or country-level badges providing strategic context for the tactical data shown by other layers.
+
+**Why this matters:** Military movement data (aircraft, vessels, satellites) and conflict events (GDELT) show *what is happening*. Humanitarian data shows *what it means for people* — how many civilians are displaced, where food insecurity is critical, which regions face active humanitarian emergencies. The combination transforms Overwatch from a movement tracker into a situational awareness tool.
+
+**Key endpoints:**
+- `GET /v1/reports` — Humanitarian situation reports, filterable by country, disaster, date, source
+- `GET /v1/disasters` — Active disaster/crisis declarations with GLIDE numbers
+- `GET /v1/countries` — Country profiles with crisis indicators
 
 ## Tech Stack
 
@@ -317,7 +330,7 @@ No API key needed — conflict tracking works out of the box.
 
 ADS-B data is broadcast unencrypted on open radio frequencies (1090 MHz). AIS data is broadcast unencrypted on VHF marine frequencies. Receiving, aggregating, and displaying this data is legal in the United States and most jurisdictions. This project uses only publicly available, community-aggregated data through open APIs.
 
-Satellite TLE data from CelesTrak is derived from the US Space Command public catalog. Conflict event data from GDELT is derived from open news sources. NOTAM/TFR data is published by the FAA for public consumption.
+Satellite TLE data from CelesTrak is derived from the US Space Command public catalog. Conflict event data from GDELT is derived from open news sources. NOTAM/TFR data is published by the FAA for public consumption. Humanitarian data from ReliefWeb is published by UN OCHA for public use.
 
 The ADSB.lol data is licensed under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Attribution: Data from ADSB.lol contributors.
 
