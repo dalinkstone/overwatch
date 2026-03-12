@@ -3,13 +3,14 @@ import { NextResponse } from "next/server";
 // ---------------------------------------------------------------------------
 // Country boundary GeoJSON proxy route
 // ---------------------------------------------------------------------------
-// Fetches simplified country boundary polygons from datahub.io, strips
-// unnecessary properties (keeping only ISO3 + name + geometry), and caches
-// in a module-level variable. The data is static — countries don't change.
+// Fetches simplified country boundary polygons from the datasets/geo-countries
+// GitHub repo (Natural Earth data), strips unnecessary properties (keeping only
+// ISO3 + name + geometry), and caches in a module-level variable. The data is
+// static — countries don't change.
 // ---------------------------------------------------------------------------
 
 const BOUNDARY_SOURCE_URL =
-  "https://r2.datahub.io/clvyjaryy0000la0fi7rnm0ft/main/raw/data/countries.geojson";
+  "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson";
 
 const FETCH_TIMEOUT_MS = 30_000;
 const CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -24,6 +25,7 @@ let cacheTimestamp = 0;
 
 interface RawFeatureProperties {
   ISO_A3?: string;
+  "ISO3166-1-Alpha-3"?: string;
   ADMIN?: string;
   // Fallback field names used by some GeoJSON sources
   iso3?: string;
@@ -34,7 +36,11 @@ interface RawFeatureProperties {
 
 /** Extract ISO3 code from feature properties, trying multiple field names. */
 const extractIso3 = (props: RawFeatureProperties): string | null => {
-  const iso3 = props.ISO_A3 ?? props.iso3 ?? props.ISO3;
+  const iso3 =
+    props.ISO_A3 ??
+    props["ISO3166-1-Alpha-3"] ??
+    props.iso3 ??
+    props.ISO3;
   if (!iso3 || iso3 === "-99" || iso3.length !== 3) return null;
   return iso3;
 };

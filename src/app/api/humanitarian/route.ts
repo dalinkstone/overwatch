@@ -13,7 +13,8 @@ import {
 // ---------------------------------------------------------------------------
 
 const RELIEFWEB_BASE = "https://api.reliefweb.int/v1";
-const APPNAME = process.env.RELIEFWEB_APPNAME ?? "overwatch";
+// Checked at request time — route returns 503 if unset.
+const APPNAME = process.env.RELIEFWEB_APPNAME as string | undefined;
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
@@ -55,13 +56,21 @@ const mapDisasterStatus = (rwStatus: string): "ongoing" | "past" | "alert" => {
 // Fetch helpers
 // ---------------------------------------------------------------------------
 
-const fetchWithTimeout = async (url: string): Promise<Response> => {
+const postWithTimeout = async (
+  url: string,
+  body: Record<string, unknown>,
+): Promise<Response> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
+      method: "POST",
       signal: controller.signal,
-      headers: { Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
     });
     return response;
   } finally {
@@ -112,36 +121,28 @@ interface RWResponse<T> {
 // ---------------------------------------------------------------------------
 
 const fetchDisasters = async (): Promise<Array<RWItem<RWDisasterFields>>> => {
-  const params = new URLSearchParams({
-    appname: APPNAME,
-    "filter[field]": "status",
-    "filter[value]": "ongoing",
-    "fields[include][]": "name",
-    limit: "500",
-    "sort[]": "date.created:desc",
+  const url = `${RELIEFWEB_BASE}/disasters?appname=${encodeURIComponent(APPNAME!)}`;
+  const response = await postWithTimeout(url, {
+    filter: { field: "status", value: "ongoing" },
+    fields: {
+      include: [
+        "name",
+        "glide",
+        "primary_country.iso3",
+        "primary_country.name",
+        "type",
+        "status",
+        "date.created",
+        "url",
+      ],
+    },
+    limit: 500,
+    sort: ["date.created:desc"],
   });
 
-  // URLSearchParams doesn't support multiple values for the same key via constructor,
-  // so append additional fields
-  const fieldsToInclude = [
-    "glide",
-    "primary_country.iso3",
-    "primary_country.name",
-    "primary_country.location",
-    "type",
-    "status",
-    "date.created",
-    "url",
-  ];
-  for (const field of fieldsToInclude) {
-    params.append("fields[include][]", field);
-  }
-
-  const url = `${RELIEFWEB_BASE}/disasters?${params.toString()}`;
-  const response = await fetchWithTimeout(url);
-
   if (!response.ok) {
-    throw new Error(`ReliefWeb disasters returned ${response.status}`);
+    const body = await response.text().catch(() => "");
+    throw new Error(`ReliefWeb disasters returned ${response.status}: ${body}`);
   }
 
   const raw: unknown = await response.json();
@@ -158,33 +159,33 @@ const fetchDisasters = async (): Promise<Array<RWItem<RWDisasterFields>>> => {
 };
 
 const fetchReports = async (): Promise<Array<RWItem<RWReportFields>>> => {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace("Z", "+00:00");
 
-  const params = new URLSearchParams({
-    appname: APPNAME,
-    "filter[field]": "date.created",
-    "filter[value][from]": thirtyDaysAgo,
-    "fields[include][]": "title",
-    limit: "1000",
-    "sort[]": "date.created:desc",
+  const url = `${RELIEFWEB_BASE}/reports?appname=${encodeURIComponent(APPNAME!)}`;
+  const response = await postWithTimeout(url, {
+    filter: {
+      field: "date.created",
+      value: { from: thirtyDaysAgo },
+    },
+    fields: {
+      include: [
+        "title",
+        "url",
+        "primary_country.iso3",
+        "primary_country.name",
+        "date.created",
+        "disaster.name",
+      ],
+    },
+    limit: 1000,
+    sort: ["date.created:desc"],
   });
 
-  const fieldsToInclude = [
-    "url",
-    "primary_country.iso3",
-    "primary_country.name",
-    "date.created",
-    "disaster.name",
-  ];
-  for (const field of fieldsToInclude) {
-    params.append("fields[include][]", field);
-  }
-
-  const url = `${RELIEFWEB_BASE}/reports?${params.toString()}`;
-  const response = await fetchWithTimeout(url);
-
   if (!response.ok) {
-    throw new Error(`ReliefWeb reports returned ${response.status}`);
+    const body = await response.text().catch(() => "");
+    throw new Error(`ReliefWeb reports returned ${response.status}: ${body}`);
   }
 
   const raw: unknown = await response.json();
@@ -382,6 +383,13 @@ const jsonHeaders = (maxAge: number, swr: number) => ({
 // ---------------------------------------------------------------------------
 
 export async function GET() {
+  if (!APPNAME) {
+    return NextResponse.json(
+      { error: "RELIEFWEB_APPNAME not configured. Set it in .env.local.", timestamp: new Date().toISOString() },
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   // Serve from cache if valid
   if (cachedData && Date.now() - cacheTimestamp < CACHE_DURATION) {
     return NextResponse.json(cachedData, {

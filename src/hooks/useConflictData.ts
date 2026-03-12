@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ConflictEventEnriched, ConflictApiResponse } from "@/lib/conflictTypes";
 
-const CONFLICT_POLL_INTERVAL_MS = 600000; // 10 minutes
+const CONFLICT_POLL_INTERVAL_MS = 1_800_000; // 30 minutes
 
 interface UseConflictDataReturn {
   events: ConflictEventEnriched[];

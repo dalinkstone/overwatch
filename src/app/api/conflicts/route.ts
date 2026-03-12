@@ -26,9 +26,9 @@ const GDELT_GEO_BASE_URL = "http://api.gdeltproject.org/api/v2/geo/geo";
 const GDELT_LASTUPDATE_URL = "http://data.gdeltproject.org/gdeltv2/lastupdate.txt";
 const FETCH_TIMEOUT_MS = 15_000;
 const EXPORT_FETCH_TIMEOUT_MS = 30_000;
-const GEO_CACHE_TTL_MS = 600_000; // 10 minutes
-const EXPORT_CACHE_TTL_MS = 900_000; // 15 minutes
-const MERGED_CACHE_TTL_MS = 600_000; // 10 minutes
+const GEO_CACHE_TTL_MS = 1_800_000; // 30 minutes
+const EXPORT_CACHE_TTL_MS = 1_800_000; // 30 minutes
+const MERGED_CACHE_TTL_MS = 1_800_000; // 30 minutes
 const EVENT_MAX_AGE_MS = 86_400_000; // 24 hours
 
 const GDELT_PARAMS = new URLSearchParams({

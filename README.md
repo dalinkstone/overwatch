@@ -150,23 +150,33 @@ Position computation is done **client-side** using the `satellite.js` library (J
 
 **Rendering:** Polygon overlays with severity-based opacity. Inactive "BY NOTAM" zones shown as outlines only. Zoom gate at level 4+.
 
-### Layer 6: Humanitarian Context (Planned)
+### Layer 6: Humanitarian Context (Active)
 
 | Source | URL | Auth | Status |
 |---|---|---|---|
-| ReliefWeb API | `https://api.reliefweb.int/v1/` | None (appname param only) | Planned |
-| HDX (Humanitarian Data Exchange) | `https://data.humdata.org/` | None | Planned |
+| ReliefWeb API (Disasters) | `https://api.reliefweb.int/v1/disasters` | None (appname param only) | Active |
+| ReliefWeb API (Reports) | `https://api.reliefweb.int/v1/reports` | None (appname param only) | Active |
+| Country Boundaries | `https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson` | None | Active |
 
 **ReliefWeb** is the United Nations Office for the Coordination of Humanitarian Affairs (OCHA) information service. The API provides free, no-auth access to humanitarian situation reports, disaster declarations, crisis updates, and country-level humanitarian indicators. Data is curated by OCHA editorial staff from 4,000+ trusted sources.
 
-**Planned integration:** Country/region-level crisis overlay showing active humanitarian emergencies, displacement figures, food insecurity classifications, and civilian impact data. Unlike the point-marker layers, this will render as choropleth shading or country-level badges providing strategic context for the tactical data shown by other layers.
+**How it works:** Two parallel API requests fetch active disasters and recent reports (last 30 days) from ReliefWeb. Results are grouped by country ISO3 code, and each country with disasters or reports gets a `HumanitarianCrisis` object. Country boundary GeoJSON (from datahub.io, cached 24h) provides polygon geometry for choropleth rendering. Countries are shaded by severity with badges at centroids showing disaster/report counts.
+
+**Severity classification:**
+- **Critical:** reportCount >= 50 OR disasterCount >= 3 OR types includes complex-emergency
+- **Major:** reportCount >= 20 OR disasterCount >= 2 OR types includes conflict
+- **Moderate:** reportCount >= 5
+- **Minor:** everything else
+
+**Severity colors:** Critical (deep red `#991b1b`), Major (red `#dc2626`), Moderate (orange `#f97316`), Minor (yellow `#eab308`).
+
+**Rendering:** Choropleth country-level polygon shading via `L.geoJSON` with severity-based fill opacity + `L.divIcon` badges at country centroids. Pane z-410 (below all other data layers). No viewport filtering needed (~30-40 active country polygons).
 
 **Why this matters:** Military movement data (aircraft, vessels, satellites) and conflict events (GDELT) show *what is happening*. Humanitarian data shows *what it means for people* — how many civilians are displaced, where food insecurity is critical, which regions face active humanitarian emergencies. The combination transforms Overwatch from a movement tracker into a situational awareness tool.
 
 **Key endpoints:**
-- `GET /v1/reports` — Humanitarian situation reports, filterable by country, disaster, date, source
-- `GET /v1/disasters` — Active disaster/crisis declarations with GLIDE numbers
-- `GET /v1/countries` — Country profiles with crisis indicators
+- `GET /v1/disasters?filter[field]=status&filter[value]=ongoing&limit=500` — Active disaster/crisis declarations with GLIDE numbers
+- `GET /v1/reports?filter[field]=date.created&filter[value][from]=<30d_ago>&limit=1000` — Recent humanitarian situation reports
 
 ## Tech Stack
 
@@ -217,8 +227,12 @@ overwatch/
 │   │       │   └── route.ts     # Proxy to CelesTrak GP endpoints (10 catalogs, 30-min cache)
 │   │       ├── airspace/
 │   │       │   └── route.ts     # Proxy to FAA ArcGIS (SUA) + TFR API/GeoServer, merged response
-│   │       └── conflicts/
-│   │           └── route.ts     # Proxy to GDELT GEO v2 API (10-min cache)
+│   │       ├── conflicts/
+│   │       │   └── route.ts     # Proxy to GDELT GEO v2 API (10-min cache)
+│   │       └── humanitarian/
+│   │           ├── route.ts     # Proxy to ReliefWeb disasters + reports (30-min cache)
+│   │           └── boundaries/
+│   │               └── route.ts # Country boundary GeoJSON proxy (24h cache, ~1.5MB)
 │   ├── components/
 │   │   ├── Map.tsx              # Leaflet map with aircraft + vessel + satellite rendering (client, no SSR)
 │   │   ├── MapWrapper.tsx       # Dynamic import wrapper for Map (ssr: false)
@@ -237,13 +251,17 @@ overwatch/
 │   │   ├── ConflictMarker.tsx   # Conflict starburst marker with category colors
 │   │   ├── ConflictPanel.tsx    # Conflict event detail panel (red accent)
 │   │   ├── ConflictFilterBar.tsx # Conflict search + category + timeframe filters (red accent)
-│   │   ├── LayerControl.tsx     # Floating layer toggle panel (aircraft/vessels/satellites/airspace/conflicts)
-│   │   └── StatusBar.tsx        # Connection status + counts + satellite error indicator
+│   │   ├── HumanitarianOverlay.tsx  # Choropleth country polygons + severity badges (L.geoJSON + L.divIcon)
+│   │   ├── HumanitarianPanel.tsx    # Humanitarian crisis detail panel (teal accent)
+│   │   ├── HumanitarianFilterBar.tsx # Humanitarian search + severity + type filters (teal accent)
+│   │   ├── LayerControl.tsx     # Floating layer toggle panel (aircraft/vessels/satellites/airspace/conflicts/humanitarian)
+│   │   └── StatusBar.tsx        # Connection status + counts + satellite error + humanitarian indicator
 │   ├── hooks/
 │   │   ├── useAircraftData.ts   # Aircraft polling hook (10s interval)
 │   │   ├── useVesselData.ts     # Vessel polling hook (15s interval, toggleable)
 │   │   ├── useSatelliteData.ts  # Satellite TLE fetch (30min) + SGP4 propagation (30s), toggleable
-│   │   └── useConflictData.ts   # Conflict polling hook (10min interval, toggleable)
+│   │   ├── useConflictData.ts   # Conflict polling hook (10min interval, toggleable)
+│   │   └── useHumanitarianData.ts # Humanitarian polling hook (30min interval, toggleable)
 │   ├── lib/
 │   │   ├── api.ts               # Aircraft fetch wrapper
 │   │   ├── types.ts             # Aircraft TypeScript interfaces
@@ -255,7 +273,9 @@ overwatch/
 │   │   ├── aisStreamManager.ts  # Server-side WebSocket singleton for aisstream.io
 │   │   ├── satelliteTypes.ts    # Satellite interfaces, category classification, formatting
 │   │   ├── satellitePropagator.ts # SGP4 propagation via satellite.js
-│   │   └── conflictTypes.ts    # Conflict interfaces, category classification, formatting
+│   │   ├── conflictTypes.ts    # Conflict interfaces, category classification, formatting
+│   │   ├── humanitarianTypes.ts # Humanitarian interfaces, severity classification, crisis types
+│   │   └── countryBoundaries.ts # Country boundary GeoJSON type definitions for choropleth
 │   └── styles/
 │       └── globals.css          # Tailwind directives
 └── public/
@@ -315,6 +335,20 @@ No API key needed — conflict tracking works out of the box.
 
 **Data source:** [GDELT Project](https://www.gdeltproject.org/) — free, no authentication required. Real-time geocoded news events derived from open news sources worldwide.
 
+### Humanitarian Context
+
+No API key needed — humanitarian tracking works out of the box.
+
+1. Click the "Humanitarian" toggle in the bottom-left layer control panel
+2. Countries with active humanitarian crises appear as colored choropleth shading
+3. Severity badges at country centroids show disaster and report counts
+4. Click any country for details (active disasters, latest reports, GLIDE numbers, ReliefWeb links)
+5. Use the teal filter bar to search by country/disaster name, filter by severity, or narrow by crisis type
+
+**Severity levels:** Critical (deep red), Major (red), Moderate (orange), Minor (yellow). Classification is based on disaster count, report count, and crisis types (e.g., complex emergencies and conflicts elevate severity).
+
+**Data source:** [ReliefWeb / UN OCHA](https://reliefweb.int/) — free, no authentication required. Active disasters and situation reports curated by UN OCHA from 4,000+ trusted sources. Data refreshes every 30 minutes.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -325,6 +359,7 @@ No API key needed — conflict tracking works out of the box.
 | `NEXT_PUBLIC_DEFAULT_LNG` | `-77.0` | Default map center longitude |
 | `NEXT_PUBLIC_DEFAULT_ZOOM` | `5` | Default map zoom level |
 | `AISSTREAM_API_KEY` | *(none)* | aisstream.io API key for vessel tracking (server-side only) |
+| `RELIEFWEB_APPNAME` | `overwatch` | ReliefWeb API appname parameter (server-side only) |
 
 ## Legal
 

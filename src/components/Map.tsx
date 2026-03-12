@@ -78,7 +78,7 @@ const Map = ({ aircraft, onAircraftClick, vessels, onVesselClick, satellites, on
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Data: <a href="https://www.adsb.lol/">ADSB.lol</a> (ODbL) | Icons: <a href="https://adsb-radar.com">ADS-B Radar</a> | Vessel data: <a href="https://aisstream.io">aisstream.io</a> | Satellite data: <a href="https://celestrak.org">CelesTrak</a>',
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Data: <a href="https://www.adsb.lol/">ADSB.lol</a> (ODbL) | Icons: <a href="https://adsb-radar.com">ADS-B Radar</a> | Vessel data: <a href="https://aisstream.io">aisstream.io</a> | Satellite data: <a href="https://celestrak.org">CelesTrak</a> | Humanitarian data: <a href="https://reliefweb.int">UN OCHA / ReliefWeb</a>',
     }).addTo(map);
 
     map.createPane(AIRSPACE_PANE).style.zIndex = "420";

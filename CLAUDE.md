@@ -4,7 +4,7 @@ Real-time military movement intelligence dashboard. Next.js 16 App Router, TypeS
 
 ## Status
 
-**Active layers:** Aircraft (ADSB.lol), Vessels (aisstream.io), Satellites (CelesTrak), Airspace (FAA ArcGIS + FAA TFR API), Conflicts (GDELT), Humanitarian (ReliefWeb) (in progress — types, route, and hook complete; UI pending)
+**Active layers:** Aircraft (ADSB.lol), Vessels (aisstream.io), Satellites (CelesTrak), Airspace (FAA ArcGIS + FAA TFR API), Conflicts (GDELT), Humanitarian (ReliefWeb)
 **Planned layers:** Seismic (USGS)
 
 All phases complete. Every file listed in the project structure below is implemented and working.
@@ -70,7 +70,7 @@ Managed in `page.tsx`, persisted to `localStorage`. Aircraft always on; vessels/
 | Vessels | `overwatch-vessel-layer` | off | 15s |
 | Satellites | `overwatch-satellite-layer` | off | TLE: 30min, positions: 30s |
 | Airspace | `overwatch-airspace-layer` | off | 5min |
-| Conflicts | `overwatch-conflict-layer` | off | 10min |
+| Conflicts | `overwatch-conflict-layer` | off | 30min |
 | Humanitarian | `overwatch-humanitarian-layer` | off | 30min |
 
 ## Data Sources
@@ -186,7 +186,7 @@ Two parallel requests merged per poll cycle:
 
 **Severity colors (4):** critical (deep red `#991b1b`), major (red `#dc2626`), moderate (orange `#f97316`), minor (yellow `#eab308`).
 
-**Rendering:** Choropleth country-level polygon shading (NOT point markers). ISO3 code used for joining to GeoJSON country boundaries.
+**Rendering:** Choropleth country-level polygon shading (NOT point markers). ISO3 code used for joining to GeoJSON country boundaries. Country boundary GeoJSON fetched from GitHub datasets/geo-countries (Natural Earth data) via `/api/humanitarian/boundaries` proxy (24h cache, ~1.5MB, stripped to ISO3 + name + geometry). `L.geoJSON` polygons + `L.divIcon` severity badges at country centroids. Pane `humanitarianPane` at z-410 (below all other layers).
 
 **Server cache:** 30min. Polling interval: 30min. `partial: true` when one ReliefWeb endpoint fails. Both fail → return stale cache or 502. No new dependencies added.
 
@@ -194,9 +194,9 @@ Two parallel requests merged per poll cycle:
 
 ### Map.tsx
 
-Client component. Vanilla Leaflet (`L.map` + `L.tileLayer`). OSM tiles. Custom panes: airspace (z-420), conflicts (z-430), satellites (z-440), vessels (z-450), aircraft (z-600 default marker pane). Viewport filtering via `moveend`/`zoomend` for vessels, satellites, airspace zones, and conflicts. Zoom gates: airspace ≥ 4, conflicts ≥ 3, vessels ≥ 4, satellites ≥ 3.
+Client component. Vanilla Leaflet (`L.map` + `L.tileLayer`). OSM tiles. Custom panes: humanitarian (z-410), airspace (z-420), conflicts (z-430), satellites (z-440), vessels (z-450), aircraft (z-600 default marker pane). Viewport filtering via `moveend`/`zoomend` for vessels, satellites, airspace zones, and conflicts. Zoom gates: airspace ≥ 4, conflicts ≥ 3, vessels ≥ 4, satellites ≥ 3.
 
-Attribution: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io | Satellite data: CelesTrak`
+Attribution: `© OpenStreetMap contributors | Data: ADSB.lol (ODbL) | Icons: ADS-B Radar | Vessel data: aisstream.io | Satellite data: CelesTrak | Humanitarian data: UN OCHA / ReliefWeb`
 
 ### Markers
 
@@ -209,6 +209,8 @@ All are `React.memo`'d with custom comparators.
 | SatelliteMarker | 20px GEO / 16px LEO/MEO | none | lat, lon, altitude, category |
 | ConflictMarker | 18-22px / 24px selected | none | lat, lon, category, name, isEnriched, numSources, isSelected |
 
+**Humanitarian** uses `L.geoJSON` country polygons + `L.divIcon` severity badges at centroids (not a traditional marker component). Rendered by `HumanitarianOverlay` in pane z-410.
+
 ### Panels
 
 All use identical slide-in layout: right sidebar (320px) on desktop ≥768px, bottom sheet (60vh) on mobile. Absolutely positioned at `z-[1000]`. Close button top-right. "Signal lost" red badge with pulse when entity disappears.
@@ -220,6 +222,7 @@ All use identical slide-in layout: right sidebar (320px) on desktop ≥768px, bo
 | SatellitePanel | purple | name, NORAD ID, category, altitude, period, inclination, orbit type, velocity, intl designator, epoch |
 | AirspacePanel | orange | name, type badge, TFR sub-type, active status, altitude range, schedule/effective period, state, description, source |
 | ConflictPanel | red | event name, category badge, enrichment indicator, actors (type badges + names + countries), CAMEO code + description, quad class badge, source link, tone, goldstein scale (with bar for enriched), article count, sources/mentions, geo precision, location, timestamp, event date |
+| HumanitarianPanel | teal | country name, severity badge, ISO3 code, disaster count, report count (30d), active disasters list (name, type, status, GLIDE number, date, ReliefWeb link), latest report (title, date, link), location (centroid lat/lon), last updated, attribution |
 
 ### Filter Bars
 
@@ -232,22 +235,24 @@ Each layer has its own filter bar below StatusBar when active. Different accent 
 | SatelliteFilterBar | purple | search (name/NORAD ID), category, orbit type |
 | AirspaceFilterBar | orange | type, TFR sub-type, active-only toggle |
 | ConflictFilterBar | red | search (name/domain), category, timeframe (24h/6h/1h), verified/enriched toggle, actor type (multi-select: Military/Government/Rebel/Civilian/Police/Other), quad class (All/Material/Verbal) |
+| HumanitarianFilterBar | teal | search (country/disaster name), severity (all/critical/major/moderate/minor), crisis type (all/complex-emergency/conflict/drought/earthquake/epidemic/flood/etc.) |
 
 ### Page Integration (page.tsx)
 
-- All layer states + filters as component state
+- All layer states + filters as component state (aircraft, vessel, satellite, airspace, conflict, humanitarian)
 - Layer toggles hydrated from `localStorage` after mount (avoids SSR mismatch)
-- **Mutual exclusivity:** only one detail panel open at a time
-- Independent `useMemo` filter chains per layer
+- **Mutual exclusivity:** only one detail panel open at a time — selecting any entity closes all other panels (aircraft, vessel, satellite, airspace, conflict, humanitarian)
+- Independent `useMemo` filter chains per layer — humanitarian filters by search (country/disaster name), severity, and crisis type
+- Humanitarian state: `humanitarianEnabled`, `selectedHumanitarianCrisis`, `humanitarianSearchQuery`, `humanitarianSeverityFilter`, `humanitarianTypeFilter`, `filteredHumanitarianCrises`
 - Loading overlay, error banner, empty state — all for aircraft layer (core)
 
 ### StatusBar
 
-Fixed top. Dark zinc-900. Shows: brand, total/tracked aircraft count, vessel count (blue, when active), satellite count (purple, when active), satellite error (amber), airspace zone count (orange, when active), conflict count (red, when active) with enrichment ratio (green, when >0 enriched), last updated time, connection status dot.
+Fixed top. Dark zinc-900. Shows: brand, total/tracked aircraft count, vessel count (blue, when active), satellite count (purple, when active), satellite error (amber), airspace zone count (orange, when active), conflict count (red, when active) with enrichment ratio (green, when >0 enriched), humanitarian crisis count (teal, when active) with partial indicator, last updated time, connection status dot.
 
 ### LayerControl
 
-Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot), vessel row (toggleable, blue), satellite row (toggleable, purple), airspace row (toggleable, orange), conflict row (toggleable, red). Disabled state for missing API key (vessels only).
+Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot), vessel row (toggleable, blue), satellite row (toggleable, purple), airspace row (toggleable, orange), conflict row (toggleable, red), humanitarian row (toggleable, teal). Disabled state for missing API key (vessels only).
 
 ## Planned Layers
 
@@ -261,6 +266,7 @@ Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot),
 - Satellites: viewport filtered, zoom gate ≥ 3, client-side SGP4 (no server round-trip between TLE fetches)
 - Airspace: viewport filtered, zoom gate ≥ 4, ~330 active zones (up to ~1600 with inactive). Polygon overlays via `L.polygon()`.
 - Conflicts: viewport filtered, zoom gate ≥ 3, ~500 max events (GDELT maxpoints cap). Static markers, no animation overhead.
+- Humanitarian: ~30-40 country polygons, no viewport filtering needed. Boundary GeoJSON cached in ref after first load (~1.5MB one-time fetch from `/api/humanitarian/boundaries`). Choropleth + badge rendering via `L.geoJSON` and `L.divIcon`.
 - All markers `React.memo`'d. No historical positions stored — each poll replaces state entirely.
 
 ## Error Handling
@@ -273,6 +279,7 @@ Floating bottom-left, z-800, backdrop blur. Aircraft row (always on, green dot),
 - Satellite route: `partial: true` flag when some catalogs fail
 - Airspace route: `partial: true` when one source (SUA or TFR) fails; both use `Promise.allSettled`
 - Conflict route: dual-fetch degradation. GEO v2 failure uses stale cache; Events Export failure returns GEO-only events with `isEnriched: false`. Zip decompression failure same degradation. TSV parse errors skip individual rows. Both set `partial: true`. Empty export is not an error — uses accumulated events.
+- Humanitarian route: `Promise.allSettled` for disasters + reports. Stale cache fallback on error. `partial: true` when one source fails. 502 when both fail and no cache. Boundary route: 24h cache with stale fallback on fetch failure.
 
 ## Allowed Dependencies
 
